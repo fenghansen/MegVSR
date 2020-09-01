@@ -10,6 +10,23 @@ def make_layer(block, n_layers):
         layers.append(block())
     return nn.Sequential(*layers)
 
+class ResidualBlock(nn.Module):
+    def __init__(self, channels, momentum=0.8):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(channels, momentum=momentum)
+        self.prelu = nn.PReLU()
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(channels, momentum=momentum)
+
+    def forward(self, x):
+        residual = self.conv1(x)
+        residual = self.bn1(residual)
+        residual = self.prelu(residual)
+        residual = self.conv2(residual)
+        residual = self.bn2(residual)
+
+        return x + residual
 
 class ResidualDenseBlock_5C(nn.Module):
     def __init__(self, nf=64, gc=32, bias=True):
@@ -50,29 +67,15 @@ class RRDB(nn.Module):
         return out * 0.2 + x
 
 
-class RRDBNet(nn.Module):
-    def __init__(self, in_nc, out_nc, nf, nb, gc=32):
-        super(RRDBNet, self).__init__()
-        RRDB_block_f = functools.partial(RRDB, nf=nf, gc=gc)
-
-        self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
-        self.RRDB_trunk = make_layer(RRDB_block_f, nb)
-        self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
-        #### upsampling
-        self.upconv1 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
-        self.upconv2 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
-        self.HRconv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
-        self.conv_last = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
-
-        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+class UpsampleBLock(nn.Module):
+    def __init__(self, in_channels, up_scale):
+        super(UpsampleBLock, self).__init__()
+        self.conv = nn.Conv2d(in_channels, in_channels * up_scale ** 2, kernel_size=3, padding=1)
+        self.pixel_shuffle = nn.PixelShuffle(up_scale)
+        self.prelu = nn.PReLU()
 
     def forward(self, x):
-        fea = self.conv_first(x)
-        trunk = self.trunk_conv(self.RRDB_trunk(fea))
-        fea = fea + trunk
-
-        fea = self.lrelu(self.upconv1(F.interpolate(fea, scale_factor=2, mode='nearest')))
-        fea = self.lrelu(self.upconv2(F.interpolate(fea, scale_factor=2, mode='nearest')))
-        out = self.conv_last(self.lrelu(self.HRconv(fea)))
-
-        return out
+        x = self.conv(x)
+        x = self.pixel_shuffle(x)
+        x = self.prelu(x)
+        return x
