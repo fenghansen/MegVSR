@@ -1,7 +1,59 @@
+import math
 from modules import *
 
+class SRResnet(nn.Module):
+    def __init__(self, scale_factor, nb=16, filters=64):
+        upsample_block_num = int(math.log(scale_factor, 2))
+
+        super().__init__()
+        self.block_pre = nn.Sequential(
+            nn.Conv2d(3, filters, kernel_size=9, padding=4),
+            nn.PReLU()
+        )
+        self.residual_blocks = make_layer(ResidualBlock(filters), nb-1)
+        self.block_post = nn.Sequential(
+            nn.Conv2d(filters, filters, kernel_size=3, padding=1),
+            nn.BatchNorm2d(filters, momentum=0.8)
+        )
+        self.upsample = make_layer(UpsampleBLock(filters, 2), upsample_block_num)
+        self.out = nn.Conv2d(filters, 3, kernel_size=9, padding=4)
+
+    def forward(self, x):
+        block_pre = self.block_pre(x)
+        residual_blocks = self.residual_blocks(block_pre)
+        block_post = self.block_post(residual_blocks)
+        small_features = block_post + block_pre
+        upsample = self.upsample(small_features)
+        out = self.out(upsample)
+
+        return (torch.tanh(out) + 1) / 2
+
+
+class SR_RRDB(nn.Module):
+    def __init__(self, in_nc=3, out_nc=3, nf=64, nb=5, gc=32):
+        super(RRDBNet, self).__init__()
+        RRDB_block_f = functools.partial(RRDB, nf=nf, gc=gc)
+        self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
+        self.RRDB_trunk = make_layer(RRDB_block_f, nb)
+        self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        #### upsampling
+        self.upsample = make_layer(UpsampleBLock(nf, 2), 2)
+        self.HRconv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.conv_last = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
+
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+
+    def forward(self, x):
+        fea = self.conv_first(x)
+        trunk = self.trunk_conv(self.RRDB_trunk(fea))
+        fea = fea + trunk
+
+        fea = self.upsample(fea)
+        out = self.conv_last(self.lrelu(self.HRconv(fea)))
+
+        return out
 class RRDBNet(nn.Module):
-    def __init__(self, in_nc=3, out_nc=3, nf=64, nb=3, gc=32):
+    def __init__(self, in_nc=3, out_nc=3, nf=64, nb=23, gc=32):
         super(RRDBNet, self).__init__()
         RRDB_block_f = functools.partial(RRDB, nf=nf, gc=gc)
         self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)

@@ -18,44 +18,40 @@ class MegVSR_Dataset(Dataset):
         self.initialization()
     
     def initialization(self):
-        self.sub_dir = 'train_png' if self.mode == 'train' else 'test_png'
+        self.sub_dir = 'train_png' if self.mode == 'train' else 'eval_png'
         self.data_dir = os.path.join(self.root_dir, self.sub_dir)
         self.video_id = 0
         self.lr_dirs = []
         self.hr_dirs = []
-        if self.mode == 'train':
-            # Dir
-            for dirname in os.listdir(self.data_dir):
-                if 'down4x' in dirname:
-                    self.lr_dirs.append(dirname)
-                else:
-                    self.hr_dirs.append(dirname)
-            self.num_of_videos = len(self.lr_dirs)
-            # file path
-            self.frame_paths = []
-            for lr_dirname in tqdm(self.lr_dirs):
-                video_id = int(lr_dirname[:2])
-                lr_frames = []
-                for filename in os.listdir(os.path.join(self.data_dir, lr_dirname)):
-                    lr_path = os.path.join(self.data_dir, lr_dirname, filename)
-                    lr_frames.append(lr_path)
-                hr_frames = []
-                hr_dirname = lr_dirname[:6] + '_frames'
-                for filename in os.listdir(os.path.join(self.data_dir, hr_dirname)):
-                    hr_path = os.path.join(self.data_dir, hr_dirname, filename)
-                    hr_frames.append(hr_path)
-                video_frames = {
-                    'id': video_id,
-                    'len': len(lr_frames),
-                    'lr_frames': lr_frames,
-                    'hr_frames': hr_frames,
-                }
-                self.frame_paths.append(video_frames)
-            # 初始化完毕
-            return True
-        else:
-            # 验证集只需要返回lr
-            pass
+        # Read Dirs
+        for dirname in os.listdir(self.data_dir):
+            if 'down4x' in dirname:
+                self.lr_dirs.append(dirname)
+            else:
+                self.hr_dirs.append(dirname)
+        self.num_of_videos = len(self.lr_dirs)
+        # file path
+        self.frame_paths = []
+        for lr_dirname in tqdm(self.lr_dirs):
+            video_id = int(lr_dirname[:2])
+            lr_frames = []
+            for filename in os.listdir(os.path.join(self.data_dir, lr_dirname)):
+                lr_path = os.path.join(self.data_dir, lr_dirname, filename)
+                lr_frames.append(lr_path)
+            hr_frames = []
+            hr_dirname = lr_dirname[:6] + '_frames'
+            for filename in os.listdir(os.path.join(self.data_dir, hr_dirname)):
+                hr_path = os.path.join(self.data_dir, hr_dirname, filename)
+                hr_frames.append(hr_path)
+            video_frames = {
+                'id': video_id,
+                'len': len(lr_frames),
+                'lr_frames': lr_frames,
+                'hr_frames': hr_frames,
+            }
+            self.frame_paths.append(video_frames)
+        # 初始化完毕
+        return True
 
     def __len__(self):
         return self.frame_paths[self.video_id]['len']
@@ -76,7 +72,7 @@ class MegVSR_Dataset(Dataset):
         lr_crops = lr_crops.transpose(0,3,1,2).astype(np.float32) / 255.
         hr_crops = hr_crops.transpose(0,3,1,2).astype(np.float32) / 255.
 
-        data['frame_id'] = '%03d' % idx
+        data['frame_id'] = '%04d' % idx
         data['video_id'] = '%02d' % video_id
         data['lr'] = np.ascontiguousarray(lr_crops)
         data['hr'] = np.ascontiguousarray(hr_crops)
@@ -84,29 +80,52 @@ class MegVSR_Dataset(Dataset):
         return data
 
 
-class TestDataset(Dataset):
-    def __init__(self, root_dir, ratio=1, sub_dir='eval'):
+class MegVSR_Test_Dataset(Dataset):
+    def __init__(self, root_dir):
         super().__init__()
         self.root_dir = root_dir
-        self.ratio = ratio
-        self.sub_dir = sub_dir
         self.initialization()
     
     def initialization(self):
+        self.sub_dir = 'test_png'
         self.data_dir = os.path.join(self.root_dir, self.sub_dir)
-        self.dataname = os.listdir(self.data_dir)
-        self.datapath = [os.path.join(self.data_dir, name) for name in 
-                        self.dataname if 'dng' in name.lower()]
-        self.raw_data = []
+        self.video_id = 0
+        self.lr_dirs = []
+        # Read Dirs
+        for dirname in os.listdir(self.data_dir):
+            self.lr_dirs.append(dirname)
+        self.num_of_videos = len(self.lr_dirs)
+        # file path
+        self.frame_paths = []
+        for lr_dirname in tqdm(self.lr_dirs):
+            video_id = int(lr_dirname[:2])
+            lr_frames = []
+            for filename in os.listdir(os.path.join(self.data_dir, lr_dirname)):
+                lr_path = os.path.join(self.data_dir, lr_dirname, filename)
+                lr_frames.append(lr_path)
+            hr_frames = []
+            video_frames = {
+                'id': video_id,
+                'len': len(lr_frames),
+                'lr_frames': lr_frames,
+            }
+            self.frame_paths.append(video_frames)
+        # 初始化完毕
+        return True
 
     def __len__(self):
-        return len(self.dataname)
+        return self.frame_paths[self.video_id-90]['len']
     
     def __getitem__(self, idx):
         data = {}
-        # gt_img = process.postprocess_bayer(data['rawpath'], data['data'])
-        # plt.imshow(gt_img)
-        # plt.show()
+        video_frame = self.frame_paths[self.video_id-90]
+        video_id = video_frame['id']
+        lr_img = cv2.imread(video_frame['lr_frames'][idx])[:,:,::-1]
+        lr_crops = np.expand_dims(lr_img, 0)
+        lr_crops = scale_down(lr_crops.transpose(0,3,1,2))
+        data['frame_id'] = '%04d' % idx
+        data['video_id'] = '%02d' % video_id
+        data['lr'] = np.ascontiguousarray(lr_crops)
 
         return data
 
