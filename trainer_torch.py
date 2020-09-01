@@ -20,22 +20,23 @@ if __name__ == '__main__':
     crop_per_image = 8
     crop_size = 64
     num_workers = 2
-    step_size = 50
+    step_size = 5
     learning_rate = 1e-4
     lastepoch = 0
     save_freq = 1
     plot_freq = 1
-    mode = 'test'
+    mode = 'train'
 
     # tiny
-    net = RRDBNet(nf=64, nb=3)
+    # net = RRDBNet(nf=64, nb=3)
     # normal
     # net = RRDBNet(nf=64, nb=8)
+    net = SRResnet(nb=16)
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     # load weight
-    model = torch.load(os.path.join(model_dir, 'RRDB_net_tiny_e0010'))
+    model = torch.load('last_model.pth')
     net.load_state_dict(model['net'])
-    optimizer.load_state_dict(model['opt'])
+    # optimizer.load_state_dict(model['opt'])
 
     random.seed(100)
     # 训练
@@ -52,7 +53,6 @@ if __name__ == '__main__':
 
         for epoch in range(lastepoch+1, 501):
             for video_id in range(train_dst.num_of_videos):
-                break
                 train_dst.video_id = video_id
                 cnt = 0
                 total_loss = 0
@@ -114,6 +114,7 @@ if __name__ == '__main__':
                 }
                 save_path = os.path.join(model_dir, 'model.torch.state_e%04d'%((epoch//10) * 10))
                 torch.save(state, save_path)
+                torch.save(state, 'last_model.pth')
     # 输出测试集
     elif mode == 'test':
         bs_test = 4

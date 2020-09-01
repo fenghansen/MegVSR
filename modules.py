@@ -7,11 +7,11 @@ import torch.nn.functional as F
 def make_layer(block, n_layers):
     layers = []
     for _ in range(n_layers):
-        layers.append(block())
+        layers.append(block)
     return nn.Sequential(*layers)
 
 class ResidualBlock(nn.Module):
-    def __init__(self, channels, momentum=0.8):
+    def __init__(self, channels=64, momentum=0.8):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(channels, momentum=momentum)

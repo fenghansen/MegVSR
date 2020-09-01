@@ -2,7 +2,7 @@ import math
 from modules import *
 
 class SRResnet(nn.Module):
-    def __init__(self, scale_factor, nb=16, filters=64):
+    def __init__(self, scale_factor=4, nb=16, filters=64):
         upsample_block_num = int(math.log(scale_factor, 2))
 
         super().__init__()
