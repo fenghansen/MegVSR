@@ -49,6 +49,9 @@ def get_host_with_dir(dataset_name=''):
         host = '/data'
     elif hostname == 'DESKTOP-FCAMIOQ':
         host = 'F:/datasets'
+    elif len(hostname) > 30:
+        multi_gpu = True
+        host = '/home/megstudio/workspace/datasets'
     else:
         multi_gpu = True
         host = '/mnt/lustre/fenghansen/datasets'
