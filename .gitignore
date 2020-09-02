@@ -1,6 +1,7 @@
 # custom
 saved_model/
 images/
+*.pth
 *.png
 *.jpg
 
@@ -129,3 +130,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+images/test.tar.gz
