@@ -2,10 +2,9 @@ import math
 from modules import *
 
 class SRResnet(nn.Module):
-    def __init__(self, scale_factor=4, nb=16, filters=64):
-        upsample_block_num = int(math.log(scale_factor, 2))
-
+    def __init__(self, scale_factor=4, nb=16, filters=64, res=True):
         super().__init__()
+        self.res = res
         self.block_pre = nn.Sequential(
             nn.Conv2d(3, filters, kernel_size=9, padding=4),
             nn.PReLU()
@@ -15,8 +14,10 @@ class SRResnet(nn.Module):
             nn.Conv2d(filters, filters, kernel_size=3, padding=1),
             nn.BatchNorm2d(filters, momentum=0.8)
         )
-        self.upsample = make_layer(UpsampleBLock(filters, 2), upsample_block_num)
+        self.upsample = make_layer(UpsampleBLock(filters, 2), 2)
         self.out = nn.Conv2d(filters, 3, kernel_size=9, padding=4)
+        if self.res:
+            self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
         block_pre = self.block_pre(x)
@@ -25,8 +26,11 @@ class SRResnet(nn.Module):
         small_features = block_post + block_pre
         upsample = self.upsample(small_features)
         out = self.out(upsample)
-
-        return (torch.tanh(out) + 1) / 2
+        if self.res:
+            imgs_bc = self.bicubic(x)
+            return out + imgs_bc
+        else:
+            return (torch.tanh(out) + 1) / 2
 
 
 class SR_RRDB(nn.Module):

@@ -22,7 +22,7 @@ if __name__ == '__main__':
     num_workers = 2
     step_size = 5
     learning_rate = 1e-4
-    lastepoch = 0
+    lastepoch = 20
     save_freq = 1
     plot_freq = 1
     mode = 'train'
@@ -50,7 +50,7 @@ if __name__ == '__main__':
 
         scheduler = optim.lr_scheduler.StepLR(optimizer, gamma=0.5, step_size=step_size)
         net = net.to(device)
-
+        net.train()
         for epoch in range(lastepoch+1, 501):
             for video_id in range(train_dst.num_of_videos):
                 train_dst.video_id = video_id
@@ -88,6 +88,7 @@ if __name__ == '__main__':
             log(f"learning_rate: {scheduler.get_lr()[0]:.6f}")
             # 输出采样
             if epoch % plot_freq == 0:
+                net.eval()
                 with tqdm(total=len(dataloader_eval)) as t:
                     for k, data in enumerate(dataloader_eval):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
@@ -98,6 +99,7 @@ if __name__ == '__main__':
                         imgs_hr = imgs_hr.type(torch.FloatTensor).to(device)
                         with torch.no_grad():
                             imgs_sr = net(imgs_lr)
+                            imgs_sr = torch.clamp(imgs_sr, 0, 1)
 
                         t.set_description(f'Frame {k}')
                         t.update(1)
@@ -117,6 +119,7 @@ if __name__ == '__main__':
                 torch.save(state, 'last_model.pth')
     # 输出测试集
     elif mode == 'test':
+        net.eval()
         bs_test = 4
         test_dst = MegVSR_Test_Dataset(root_dir)
         dataloader_test = DataLoader(test_dst, batch_size=bs_test, shuffle=False, num_workers=2)
@@ -132,6 +135,7 @@ if __name__ == '__main__':
                         imgs_lr = tensor_dim5to4(data['lr'])
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
                         imgs_sr = net(imgs_lr)
+                        imgs_sr = torch.clamp(imgs_sr, 0, 1)
                         imgs_sr = imgs_sr.detach().cpu().numpy()
                     
                     for i in range(imgs_sr.shape[0]):
