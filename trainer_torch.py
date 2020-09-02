@@ -30,12 +30,12 @@ if __name__ == '__main__':
     # tiny
     # net = RRDBNet(nf=64, nb=3)
     # normal
-    # net = RRDBNet(nf=64, nb=8)
     net = SRResnet(nb=16)
+    net = SR_RRDB(nf=64, nb=6)
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     # load weight
-    model = torch.load('last_model.pth')
-    net.load_state_dict(model['net'])
+    # model = torch.load('last_model.pth')
+    # net.load_state_dict(model['net'])
     # optimizer.load_state_dict(model['opt'])
 
     random.seed(100)

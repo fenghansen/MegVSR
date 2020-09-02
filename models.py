@@ -35,10 +35,10 @@ class SRResnet(nn.Module):
 
 class SR_RRDB(nn.Module):
     def __init__(self, in_nc=3, out_nc=3, nf=64, nb=5, gc=32):
-        super(RRDBNet, self).__init__()
+        super().__init__()
         RRDB_block_f = functools.partial(RRDB, nf=nf, gc=gc)
         self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
-        self.RRDB_trunk = make_layer(RRDB_block_f, nb)
+        self.RRDB_trunk = make_layer(RRDB_block_f(nf=nf, gc=gc), nb)
         self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         #### upsampling
         self.upsample = make_layer(UpsampleBLock(nf, 2), 2)
@@ -46,6 +46,7 @@ class SR_RRDB(nn.Module):
         self.conv_last = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
 
         self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+        self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
         fea = self.conv_first(x)
@@ -54,8 +55,10 @@ class SR_RRDB(nn.Module):
 
         fea = self.upsample(fea)
         out = self.conv_last(self.lrelu(self.HRconv(fea)))
+        imgs_bc = self.bicubic(x)
 
-        return out
+        return out + imgs_bc
+
 class RRDBNet(nn.Module):
     def __init__(self, in_nc=3, out_nc=3, nf=64, nb=23, gc=32):
         super(RRDBNet, self).__init__()
