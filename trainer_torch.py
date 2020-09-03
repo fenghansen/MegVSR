@@ -2,7 +2,7 @@ import os
 import time
 import random
 from functools import lru_cache
-from torch import optim
+from torch.optim import Adam
 
 from datasets import *
 from utils import *
@@ -25,13 +25,13 @@ if __name__ == '__main__':
     lastepoch = 20
     save_freq = 1
     plot_freq = 1
-    mode = 'train'
+    mode = 'test'
 
     # tiny
     # net = RRDBNet(nf=64, nb=3)
     # normal
     net = SRResnet(nb=16)
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer = Adam(net.parameters(), lr=learning_rate)
     # load weight
     # model = torch.load('last_model.pth')
     # net.load_state_dict(model['net'])

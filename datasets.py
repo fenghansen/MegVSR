@@ -41,6 +41,8 @@ class MegVSR_Dataset(Dataset):
             for filename in os.listdir(os.path.join(self.data_dir, hr_dirname)):
                 hr_path = os.path.join(self.data_dir, hr_dirname, filename)
                 hr_frames.append(hr_path)
+            lr_frames.sort()
+            hr_frames.sort()
             video_frames = {
                 'id': video_id,
                 'len': len(lr_frames),
@@ -93,6 +95,7 @@ class MegVSR_Test_Dataset(Dataset):
         for dirname in os.listdir(self.data_dir):
             self.lr_dirs.append(dirname)
         self.num_of_videos = len(self.lr_dirs)
+        self.lr_dirs.sort()
         # file path
         self.frame_paths = []
         for lr_dirname in tqdm(self.lr_dirs):
@@ -101,7 +104,7 @@ class MegVSR_Test_Dataset(Dataset):
             for filename in os.listdir(os.path.join(self.data_dir, lr_dirname)):
                 lr_path = os.path.join(self.data_dir, lr_dirname, filename)
                 lr_frames.append(lr_path)
-            hr_frames = []
+            lr_frames.sort()
             video_frames = {
                 'id': video_id,
                 'len': len(lr_frames),

@@ -2,14 +2,14 @@ import os
 import time
 import random
 from functools import lru_cache
-from megengine.optimizer import Adam
 
+import torch as pytorch
 from datasets import *
 from utils import *
 from models import *
 
 if __name__ == '__main__':
-    device = torch.device('cuda' if torch.is_cuda_available() else 'cpu')
+    device = 'cuda' if torch.is_cuda_available() else 'cpu'
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
     model_dir = "./saved_model"
     sample_dir = "./images/samples"
@@ -18,16 +18,19 @@ if __name__ == '__main__':
     batch_size = 8
     crop_per_image = 4
     crop_size = 64
-    num_workers = 2
+    num_workers = 0
     step_size = 4
     learning_rate = 1e-4
     lastepoch = 20
     save_freq = 1
     plot_freq = 1
-    mode = 'train'
+    mode = 'test'
 
-    net = SRResnet(nb=16)
+    net = SRResnet(nb=8)
     optimizer = Adam(net.parameters(), lr=learning_rate)
+
+    # model = pytorch.load('last_model.pth')
+    # net.load_state_dict(model['net'])
 
     random.seed(100)
 
@@ -40,7 +43,7 @@ if __name__ == '__main__':
         return loss, imgs_sr
     
     @trace()
-    def test_iter(imgs_lr, imgs_hr):
+    def test_iter(imgs_lr):
         imgs_sr = net(imgs_lr)
         imgs_sr = F.clamp(imgs_sr, 0, 1)
         return imgs_sr
@@ -53,16 +56,17 @@ if __name__ == '__main__':
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image)
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, mode='eval')
 
-        sampler_train = RandomSampler(dataset=train_dst, batch_size=batch_size)
-        sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=batch_size//2)
-
-        dataloader_train = DataLoader(train_dst, sampler=sampler_train, num_workers=num_workers)
-        dataloader_eval = DataLoader(eval_dst, sampler=sampler_eval, num_workers=num_workers)
-
         net.train()
         for epoch in range(lastepoch+1, 501):
             for video_id in range(train_dst.num_of_videos):
                 train_dst.video_id = video_id
+
+                sampler_train = RandomSampler(dataset=train_dst, batch_size=batch_size)
+                sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=batch_size//2)
+
+                dataloader_train = DataLoader(train_dst, sampler=sampler_train, num_workers=num_workers)
+                dataloader_eval = DataLoader(eval_dst, sampler=sampler_eval, num_workers=num_workers)
+
                 cnt = 0
                 total_loss = 0
                 with tqdm(total=len(dataloader_train)) as t:
@@ -129,17 +133,18 @@ if __name__ == '__main__':
         net.eval()
 
         test_dst = MegVSR_Test_Dataset(root_dir)
-        sampler_test = SequentialSampler(dataset=test_dst, batch_size=batch_size//2)
-        dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
 
         for video_id in range(90, 90+test_dst.num_of_videos):
             test_dst.video_id = video_id
+            sampler_test = SequentialSampler(dataset=test_dst, batch_size=1)
+            dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
                     video_id = data['video_id']
                     frame_id = data['frame_id']
 
                     imgs_lr = tensor_dim5to4(data['lr'])
+                    imgs_lr = torch.tensor(imgs_lr, dtype='float32')
                     imgs_sr = test_iter(imgs_lr)
                     imgs_sr = imgs_sr.detach().cpu().numpy()
 

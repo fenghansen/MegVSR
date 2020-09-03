@@ -2,9 +2,10 @@ try:
     import megengine as torch
     import megengine.module as nn
     import megengine.functional as F
-    from megengine.data import Dataset, DataLoader
-    from megengine.data import RandomSampler, SequentialSampler
+    from megengine.data import RandomSampler, SequentialSampler, DataLoader
+    from megengine.data.dataset import Dataset
     from megengine.jit import trace
+    from megengine.optimizer import Adam
     use_mge = True
     print('You are Using Megengine as utils backend...')
 except:
@@ -139,8 +140,32 @@ def test_output_rename(root_dir):
             new_file = os.path.join(dirpath, "%04d.png" % (frame_id + 1))
             os.rename(old_file, new_file)
         log(f"path |{dirpath}|'s rename has finished...")
-            
+
+def transform_pth2mge(path):
+    if use_mge is False:
+        log('You need to load Megengine first...')
+        return
+    
+    net = SRResnet(nb=16)
+    model_dict = net.state_dict()
+    
+    optimizer = Adam(net.parameters(), lr=1e-4)
+
+    pretrained_dict = pytorch.load('last_model.pth')['net']
+    # 1. filter out unnecessary keys
+    for k, v in pretrained_dict.items():
+        if k in model_dict:
+            pretrained_dict[k] = v.cpu().numpy()
+            if ('bias' in k and 'conv' in k or 'mean' in k or 'var' in k
+                or '0.bias' in k or k=='out.bias'):
+                pretrained_dict[k] = pretrained_dict[k].reshape(1,-1,1,1)
+            print(f"'{k}':{model_dict[k].shape} -> {pretrained_dict[k].shape}")
+    # 2. overwrite entries in the existing state dict
+    model_dict.update(pretrained_dict)
+    net.load_state_dict(model_dict)
 
 if __name__ == '__main__':
-    pass
+    import torch as pytorch
+    from models import *
+    transform_pth2mge('last_model.pth')
     # test_output_rename(r'F:/DeepLearning/MegVSR/images/test')
