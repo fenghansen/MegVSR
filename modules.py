@@ -1,8 +1,15 @@
 
 import functools
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import megengine as torch
+    import megengine.module as nn
+    import megengine.functional as F
+    use_mge = True
+except:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    use_mge = False
 
 def make_layer(block, n_layers):
     layers = []
@@ -37,7 +44,7 @@ class ResidualDenseBlock_5C(nn.Module):
         self.conv3 = nn.Conv2d(nf + 2 * gc, gc, 3, 1, 1, bias=bias)
         self.conv4 = nn.Conv2d(nf + 3 * gc, gc, 3, 1, 1, bias=bias)
         self.conv5 = nn.Conv2d(nf + 4 * gc, nf, 3, 1, 1, bias=bias)
-        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2)
 
         # initialization
         # mutil.initialize_weights([self.conv1, self.conv2, self.conv3, self.conv4, self.conv5], 0.1)
@@ -71,7 +78,10 @@ class UpsampleBLock(nn.Module):
     def __init__(self, in_channels, up_scale):
         super(UpsampleBLock, self).__init__()
         self.conv = nn.Conv2d(in_channels, in_channels * up_scale ** 2, kernel_size=3, padding=1)
-        self.pixel_shuffle = nn.PixelShuffle(up_scale)
+        if use_mge:
+            self.pixel_shuffle = PixelShuffle(up_scale)
+        else:
+            self.pixel_shuffle = nn.PixelShuffle(up_scale)
         self.prelu = nn.PReLU()
 
     def forward(self, x):
@@ -79,3 +89,34 @@ class UpsampleBLock(nn.Module):
         x = self.pixel_shuffle(x)
         x = self.prelu(x)
         return x
+
+class PixelShuffle(nn.Module):
+    def __init__(self, scale=2):
+        super().__init__()
+        self.scale = scale
+
+    def forward(self, x):
+        N, C, iH, iW = x.shape
+        oH = iH * self.scale
+        oW = iW * self.scale
+        oC = C // self.scale // self.scale
+        after_view = x.reshape(N, oC, self.scale, self.scale, iH, iW)
+        after_transpose = F.dimshuffle(after_view, (0,1,4,2,5,3))
+        output = after_transpose.reshape(N, oC, oH, oW)
+
+        return output
+
+
+class Upsample(nn.Module):
+    def __init__(self, scale_factor=2, mode='BILINEAR'):
+        super().__init__()
+        self.scale = scale_factor
+        self.mode = mode
+
+    def forward(self, x):
+        return F.interpolate(x, scale_factor=self.scale, mode=self.mode)
+
+
+if __name__ == '__main__':
+    RRDBnet = RRDB()
+    up = UpsampleBLock(64, 4)

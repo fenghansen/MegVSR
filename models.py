@@ -17,7 +17,10 @@ class SRResnet(nn.Module):
         self.upsample = make_layer(UpsampleBLock(filters, 2), 2)
         self.out = nn.Conv2d(filters, 3, kernel_size=9, padding=4)
         if self.res:
-            self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
+            if use_mge:
+                self.bicubic = Upsample(scale_factor=4, mode='BILINEAR')
+            else:
+                self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
         block_pre = self.block_pre(x)
@@ -45,8 +48,11 @@ class SR_RRDB(nn.Module):
         self.HRconv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         self.conv_last = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
 
-        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
-        self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2)
+        if use_mge:
+            self.bicubic = Upsample(scale_factor=4, mode='BILINEAR')
+        else:
+            self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
         fea = self.conv_first(x)
@@ -64,7 +70,7 @@ class RRDBNet(nn.Module):
         super(RRDBNet, self).__init__()
         RRDB_block_f = functools.partial(RRDB, nf=nf, gc=gc)
         self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
-        self.RRDB_trunk = make_layer(RRDB_block_f, nb)
+        self.RRDB_trunk = make_layer(RRDB_block_f(nf=nf, gc=gc), nb)
         self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         #### upsampling
         self.upconv1 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
@@ -72,15 +78,15 @@ class RRDBNet(nn.Module):
         self.HRconv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         self.conv_last = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
 
-        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2)
 
     def forward(self, x):
         fea = self.conv_first(x)
         trunk = self.trunk_conv(self.RRDB_trunk(fea))
         fea = fea + trunk
 
-        fea = self.lrelu(self.upconv1(F.interpolate(fea, scale_factor=2, mode='nearest')))
-        fea = self.lrelu(self.upconv2(F.interpolate(fea, scale_factor=2, mode='nearest')))
+        fea = self.lrelu(self.upconv1(F.interpolate(fea, scale_factor=2, mode='BILINEAR')))
+        fea = self.lrelu(self.upconv2(F.interpolate(fea, scale_factor=2, mode='BILINEAR')))
         out = self.conv_last(self.lrelu(self.HRconv(fea)))
 
         return out
@@ -196,3 +202,9 @@ class DeepUnet(nn.Module):
     def lrelu(self, x):
         outt = torch.max(0.2*x, x)
         return outt
+
+if __name__ == '__main__':
+    SR_RRDBnetwork = RRDBNet()
+    SRGAN = SRResnet()
+    unet = DeepUnet()
+    print('success')
