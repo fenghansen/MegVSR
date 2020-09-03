@@ -118,3 +118,19 @@ def save_picture(img_sr, save_path='./images/test',frame_id='0000'):
         os.makedirs(save_path, exist_ok=True)
     plt.imsave(os.path.join(save_path, frame_id+'.png'), img_sr)
     gc.collect()
+
+def test_output_rename(root_dir):
+    for dirs in os.listdir(root_dir):
+        dirpath = root_dir + '/' + dirs
+        f = os.listdir(dirpath)
+        end = len(f)
+        for i in range(len(f)):
+            frame_id = int(f[end-i-1][:4])
+            old_file = os.path.join(dirpath, "%04d.png" % frame_id)
+            new_file = os.path.join(dirpath, "%04d.png" % (frame_id + 1))
+            os.rename(old_file, new_file)
+        log(f"path |{dirpath}|'s rename has finished...")
+            
+
+if __name__ == '__main__':
+    test_output_rename(r'F:/DeepLearning/MegVSR/images/test')

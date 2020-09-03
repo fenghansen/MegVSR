@@ -17,10 +17,10 @@ if __name__ == '__main__':
     test_dir = "./images/test"
     train_steps = 1000
     batch_size = 8
-    crop_per_image = 8
+    crop_per_image = 4
     crop_size = 64
     num_workers = 2
-    step_size = 5
+    step_size = 4
     learning_rate = 1e-4
     lastepoch = 20
     save_freq = 1
@@ -140,7 +140,8 @@ if __name__ == '__main__':
                     
                     for i in range(imgs_sr.shape[0]):
                         save_dir = os.path.join(test_dir, video_id[i])
-                        save_picture(imgs_sr[i], save_path=save_dir, frame_id=frame_id[i])
+                        # 注意，frame_id是下标，文件名需要+1
+                        save_picture(imgs_sr[i], save_path=save_dir, frame_id=frame_id[i]+1)
 
                         # tqdm update
                         t.set_description(f'Video {video_id[0]}')
