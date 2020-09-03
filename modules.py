@@ -5,11 +5,13 @@ try:
     import megengine.module as nn
     import megengine.functional as F
     use_mge = True
+    print('You are Using Megengine as Network backend...')
 except:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
     use_mge = False
+    print('You are Using Pytorch as Network backend...')
 
 def make_layer(block, n_layers):
     layers = []

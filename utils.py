@@ -1,5 +1,21 @@
+try:
+    import megengine as torch
+    import megengine.module as nn
+    import megengine.functional as F
+    from megengine.data import Dataset, DataLoader
+    from megengine.data import RandomSampler, SequentialSampler
+    from megengine.jit import trace
+    use_mge = True
+    print('You are Using Megengine as utils backend...')
+except:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    from torch.utils.data import Dataset, DataLoader
+    use_mge = False
+    print('You are Using Pytorch as utils backend...')
+
 import os
-import torch
 import glob
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,7 +53,7 @@ def load_weights(model, path, multi_gpu=False, by_name=False):
 
 def tensor_dim5to4(tensor):
     batchsize, crops, c, h, w = tensor.shape
-    tensor = tensor.view(-1, c, h, w)
+    tensor = tensor.reshape(batchsize*crops, c, h, w)
     return tensor
 
 
@@ -50,7 +66,6 @@ def get_host_with_dir(dataset_name=''):
     elif hostname == 'DESKTOP-FCAMIOQ':
         host = 'F:/datasets'
     elif len(hostname) > 30:
-        multi_gpu = True
         host = '/home/megstudio/workspace/datasets'
     else:
         multi_gpu = True
@@ -64,11 +79,7 @@ def scale_up(img):
     return np.uint8(img * 255.)
 
 def plot_sample(img_lr, img_sr, img_hr, save_path, frame_id, plot_path='./images/samples', 
-                model_name='RRDB', subplots=3, epoch=-1):    
-    if torch.is_tensor(img_lr):
-        img_lr = img_lr.detach().cpu().numpy()
-        img_sr = img_sr.detach().cpu().numpy()
-        img_hr = img_hr.detach().cpu().numpy()
+                model_name='RRDB', subplots=3, epoch=-1):
     # 变回uint8
     img_lr = scale_up(img_lr.transpose(1,2,0))
     img_sr = scale_up(img_sr.transpose(1,2,0))
@@ -109,9 +120,7 @@ def plot_sample(img_lr, img_sr, img_hr, save_path, frame_id, plot_path='./images
     gc.collect()
 
 
-def save_picture(img_sr, save_path='./images/test',frame_id='0000'):    
-    if torch.is_tensor(img_sr):
-        img_sr = img_sr.detach().cpu().numpy()
+def save_picture(img_sr, save_path='./images/test',frame_id='0000'):
     # 变回uint8
     img_sr = scale_up(img_sr.transpose(1,2,0))
     if os._exists(save_path) is not True:
@@ -133,4 +142,5 @@ def test_output_rename(root_dir):
             
 
 if __name__ == '__main__':
-    test_output_rename(r'F:/DeepLearning/MegVSR/images/test')
+    pass
+    # test_output_rename(r'F:/DeepLearning/MegVSR/images/test')

@@ -1,11 +1,9 @@
-import torch
 import numpy as np
 import cv2
 import os
 import h5py
 from tqdm import tqdm
 from matplotlib import pyplot as plt
-from torch.utils.data import Dataset, DataLoader
 from utils import *
 
 class MegVSR_Dataset(Dataset):
@@ -136,10 +134,12 @@ def MegVSR_DataLoader(DataLoader):
 
 def random_crop(lr_img, hr_img, crop_size=32, crop_per_image=8, aug=None):
     # 本函数用于将numpy随机裁剪成以crop_size为边长的方形crop_per_image等份
-    is_tensor = torch.is_tensor(lr_img)
-    device = 'cpu'
-    dtype = lr_img.dtype
+    if use_mge:
+        is_tensor = False
+    else:
+        is_tensor = torch.is_tensor(lr_img)
     if is_tensor:
+        dtype = lr_img.dtype
         device = lr_img.device
         if device != 'cpu':
             lr_img = lr_img.cpu()

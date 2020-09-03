@@ -2,15 +2,14 @@ import os
 import time
 import random
 from functools import lru_cache
-from torch import optim
+from megengine.optimizer import Adam
 
 from datasets import *
 from utils import *
 from models import *
-from losses import *
 
 if __name__ == '__main__':
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.is_cuda_available() else 'cpu')
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
     model_dir = "./saved_model"
     sample_dir = "./images/samples"
@@ -27,28 +26,39 @@ if __name__ == '__main__':
     plot_freq = 1
     mode = 'train'
 
-    # tiny
-    # net = RRDBNet(nf=64, nb=3)
-    # normal
     net = SRResnet(nb=16)
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
-    # load weight
-    # model = torch.load('last_model.pth')
-    # net.load_state_dict(model['net'])
-    # optimizer.load_state_dict(model['opt'])
+    optimizer = Adam(net.parameters(), lr=learning_rate)
 
     random.seed(100)
-    # 训练
+
+    @trace()
+    def train_iter(imgs_lr, imgs_hr):
+        imgs_sr = net(imgs_lr)
+        loss = F.l1_loss(imgs_hr, imgs_sr)
+        optimizer.backward(loss)
+        imgs_sr = F.clamp(imgs_sr, 0, 1)
+        return loss, imgs_sr
+    
+    @trace()
+    def test_iter(imgs_lr, imgs_hr):
+        imgs_sr = net(imgs_lr)
+        imgs_sr = F.clamp(imgs_sr, 0, 1)
+        return imgs_sr
+    
+    @trace()
+    def PSNR_Loss(low, high):
+        return -10.0 * F.log(F.mean(F.power(high-low, 2))) / F.log(torch.tensor(10.0))
+
     if mode == 'train':
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image)
-        dataloader_train = DataLoader(train_dst, batch_size=batch_size, 
-                                    shuffle=True, num_workers=num_workers)
-
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, mode='eval')
-        dataloader_eval = DataLoader(eval_dst, batch_size=batch_size//2, shuffle=False, num_workers=num_workers)
 
-        scheduler = optim.lr_scheduler.StepLR(optimizer, gamma=0.5, step_size=step_size)
-        net = net.to(device)
+        sampler_train = RandomSampler(dataset=train_dst, batch_size=batch_size)
+        sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=batch_size//2)
+
+        dataloader_train = DataLoader(train_dst, sampler=sampler_train, num_workers=num_workers)
+        dataloader_eval = DataLoader(eval_dst, sampler=sampler_eval, num_workers=num_workers)
+
         net.train()
         for epoch in range(lastepoch+1, 501):
             for video_id in range(train_dst.num_of_videos):
@@ -58,33 +68,29 @@ if __name__ == '__main__':
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
-                        imgs_lr = tensor_dim5to4(data['lr'])
-                        imgs_hr = tensor_dim5to4(data['hr'])
-                        imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
-                        imgs_hr = imgs_hr.type(torch.FloatTensor).to(device)
-                        data_load_end = time.time()
+                        imgs_lr = tensor_dim5to4(torch.tensor(data['lr']))
+                        imgs_hr = tensor_dim5to4(torch.tensor(data['hr']))
 
                         optimizer.zero_grad()
-                        pred = net(imgs_lr)
-                        loss = F.l1_loss(pred, imgs_hr)
-
-                        loss.backward()
+                        loss, imgs_sr = train_iter(imgs_lr, imgs_hr)
                         optimizer.step()
 
                         # 更新tqdm的参数
                         with torch.no_grad():
-                            pred = torch.clamp(pred, 0, 1)
-                            psnr = PSNR_Loss(pred, imgs_hr)
+                            imgs_sr = F.clamp(imgs_sr, 0, 1)
+                            psnr = PSNR_Loss(imgs_sr, imgs_hr)
                         total_loss += psnr.item()
 
                         cnt += 1
                         t.set_description(f'Epoch {epoch}, Video {video_id}')
                         t.set_postfix(PSNR=float(f"{total_loss/cnt:.6f}"))
                         t.update(1)
-                        
+            
             # 更新学习率
-            scheduler.step()
-            log(f"learning_rate: {scheduler.get_lr()[0]:.6f}")
+            learning_rate *= 0.9
+            for g in optimizer.param_groups:
+                g['lr'] = learning_rate
+            log(f"learning_rate: {learning_rate:.6f}")
             # 输出采样
             if epoch % plot_freq == 0:
                 net.eval()
@@ -97,8 +103,7 @@ if __name__ == '__main__':
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
                         imgs_hr = imgs_hr.type(torch.FloatTensor).to(device)
                         with torch.no_grad():
-                            imgs_sr = net(imgs_lr)
-                            imgs_sr = torch.clamp(imgs_sr, 0, 1)
+                            imgs_sr = test_iter(imgs_lr)
                             img_lr = imgs_lr[0].detach().cpu().numpy()
                             img_sr = imgs_sr[0].detach().cpu().numpy()
                             img_hr = imgs_hr[0].detach().cpu().numpy()
@@ -107,7 +112,7 @@ if __name__ == '__main__':
                         t.update(1)
 
                         plot_sample(img_lr, img_sr, img_hr, frame_id=frame_id[0], epoch=epoch,
-                                    save_path=sample_dir, plot_path=sample_dir, model_name='tiny_RRDB')
+                                    save_path=sample_dir, plot_path=sample_dir, model_name='SRResnet')
                                     
             # 存储模型
             if epoch % save_freq == 0:
@@ -119,27 +124,25 @@ if __name__ == '__main__':
                 save_path = os.path.join(model_dir, 'model.torch.state_e%04d'%((epoch//10) * 10))
                 torch.save(state, save_path)
                 torch.save(state, 'last_model.pth')
-    # 输出测试集
+
     elif mode == 'test':
         net.eval()
-        bs_test = 4
+
         test_dst = MegVSR_Test_Dataset(root_dir)
-        dataloader_test = DataLoader(test_dst, batch_size=bs_test, shuffle=False, num_workers=2)
-        net = net.to(device)
+        sampler_test = SequentialSampler(dataset=test_dst, batch_size=batch_size//2)
+        dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
+
         for video_id in range(90, 90+test_dst.num_of_videos):
             test_dst.video_id = video_id
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
                     video_id = data['video_id']
                     frame_id = data['frame_id']
-                    
-                    with torch.no_grad():
-                        imgs_lr = tensor_dim5to4(data['lr'])
-                        imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
-                        imgs_sr = net(imgs_lr)
-                        imgs_sr = torch.clamp(imgs_sr, 0, 1)
-                        imgs_sr = imgs_sr.detach().cpu().numpy()
-                    
+
+                    imgs_lr = tensor_dim5to4(data['lr'])
+                    imgs_sr = test_iter(imgs_lr)
+                    imgs_sr = imgs_sr.detach().cpu().numpy()
+
                     for i in range(imgs_sr.shape[0]):
                         save_dir = os.path.join(test_dir, video_id[i])
                         # 注意，frame_id是下标，文件名需要+1
@@ -148,3 +151,4 @@ if __name__ == '__main__':
                         # tqdm update
                         t.set_description(f'Video {video_id[0]}')
                         t.update(1)
+        
