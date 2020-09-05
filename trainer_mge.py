@@ -18,16 +18,16 @@ if __name__ == '__main__':
     batch_size = 8
     crop_per_image = 4
     crop_size = 64
-    num_workers = 0
+    num_workers = 2
     step_size = 4
     learning_rate = 1e-4
     lastepoch = 20
     save_freq = 1
     plot_freq = 1
-    mode = 'test'
-    symbolic = False
+    mode = 'train'
+    symbolic = True
 
-    net = SRResnet(nb=8)
+    net = SR_RRDB(nf=64, nb=8)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
     # model = pytorch.load('last_model.pth')
@@ -87,9 +87,9 @@ if __name__ == '__main__':
                         optimizer.step()
 
                         # 更新tqdm的参数
-                        with torch.no_grad():
-                            imgs_sr = F.clamp(imgs_sr, 0, 1)
-                            psnr = PSNR_Loss(imgs_sr, imgs_hr)
+                        imgs_sr = F.clamp(imgs_sr, 0, 1)
+                        psnr = PSNR_Loss(imgs_sr, imgs_hr)
+
                         total_loss += psnr.item()
 
                         cnt += 1
@@ -109,21 +109,22 @@ if __name__ == '__main__':
                     for k, data in enumerate(dataloader_eval):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         frame_id = data['frame_id']
-                        imgs_lr = tensor_dim5to4(data['lr'])
-                        imgs_hr = tensor_dim5to4(data['hr'])
-                        imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
-                        imgs_hr = imgs_hr.type(torch.FloatTensor).to(device)
-                        with torch.no_grad():
-                            imgs_sr = test_iter(imgs_lr)
-                            img_lr = imgs_lr[0].detach().cpu().numpy()
-                            img_sr = imgs_sr[0].detach().cpu().numpy()
-                            img_hr = imgs_hr[0].detach().cpu().numpy()
+                        imgs_lr_np = tensor_dim5to4(data['lr'])
+                        imgs_hr_np = tensor_dim5to4(data['hr'])
+                        imgs_lr.set_value(imgs_lr_np)
+                        imgs_hr.set_value(imgs_hr_np)
+                        
+                        imgs_sr = test_iter(imgs_lr)
+                        
+                        img_lr = imgs_lr[0].numpy()
+                        img_sr = imgs_sr[0].numpy()
+                        img_hr = imgs_hr[0].numpy()
 
                         t.set_description(f'Frame {k}')
                         t.update(1)
 
                         plot_sample(img_lr, img_sr, img_hr, frame_id=frame_id[0], epoch=epoch,
-                                    save_path=sample_dir, plot_path=sample_dir, model_name='SRResnet')
+                                    save_path=sample_dir, plot_path=sample_dir, model_name='RRDB_6')
                                     
             # 存储模型
             if epoch % save_freq == 0:
@@ -132,9 +133,9 @@ if __name__ == '__main__':
                     'net': model_dict,
                     'opt': optimizer.state_dict(),
                 }
-                save_path = os.path.join(model_dir, 'model.torch.state_e%04d'%((epoch//10) * 10))
+                save_path = os.path.join(model_dir, 'RRDB.mge.state_e%04d'%((epoch//10) * 10))
                 torch.save(state, save_path)
-                torch.save(state, 'last_model.pth')
+                torch.save(state, 'last_model.pkl')
 
     elif mode == 'test':
         test_dst = MegVSR_Test_Dataset(root_dir)
@@ -142,18 +143,18 @@ if __name__ == '__main__':
 
         for video_id in range(90, 90+test_dst.num_of_videos):
             test_dst.video_id = video_id
-            sampler_test = SequentialSampler(dataset=test_dst, batch_size=1)
+            sampler_test = SequentialSampler(dataset=test_dst, batch_size=batch_size//2)
             dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
                     video_id = data['video_id']
                     frame_id = data['frame_id']
 
-                    imgs_lr = tensor_dim5to4(data['lr'])
+                    imgs_lr_np = tensor_dim5to4(data['lr'])
                     imgs_lr.set_value(imgs_lr_np)
 
                     imgs_sr = test_iter(imgs_lr)
-                    imgs_sr = imgs_sr.detach().cpu().numpy()
+                    imgs_sr = imgs_sr.numpy()
 
                     for i in range(imgs_sr.shape[0]):
                         save_dir = os.path.join(test_dir, video_id[i])

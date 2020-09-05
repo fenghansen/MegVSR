@@ -47,16 +47,16 @@ class ResidualDenseBlock_5C(nn.Module):
         self.conv4 = nn.Conv2d(nf + 3 * gc, gc, 3, 1, 1, bias=bias)
         self.conv5 = nn.Conv2d(nf + 4 * gc, nf, 3, 1, 1, bias=bias)
         self.lrelu = nn.LeakyReLU(negative_slope=0.2)
-
+        self.concat = Concat()
         # initialization
         # mutil.initialize_weights([self.conv1, self.conv2, self.conv3, self.conv4, self.conv5], 0.1)
 
     def forward(self, x):
         x1 = self.lrelu(self.conv1(x))
-        x2 = self.lrelu(self.conv2(torch.cat((x, x1), 1)))
-        x3 = self.lrelu(self.conv3(torch.cat((x, x1, x2), 1)))
-        x4 = self.lrelu(self.conv4(torch.cat((x, x1, x2, x3), 1)))
-        x5 = self.conv5(torch.cat((x, x1, x2, x3, x4), 1))
+        x2 = self.lrelu(self.conv2(self.concat((x, x1), 1)))
+        x3 = self.lrelu(self.conv3(self.concat((x, x1, x2), 1)))
+        x4 = self.lrelu(self.conv4(self.concat((x, x1, x2, x3), 1)))
+        x5 = self.conv5(self.concat((x, x1, x2, x3, x4), 1))
         return x5 * 0.2 + x
 
 
@@ -79,10 +79,12 @@ class RRDB(nn.Module):
 class UpsampleBLock(nn.Module):
     def __init__(self, in_channels, up_scale):
         super(UpsampleBLock, self).__init__()
-        self.conv = nn.Conv2d(in_channels, in_channels * up_scale ** 2, kernel_size=3, padding=1)
         if use_mge:
+            self.conv = nn.Conv2d(in_channels, in_channels * up_scale ** 2, kernel_size=3, padding=1)
             self.pixel_shuffle = PixelShuffle(up_scale)
+            # self.pixel_shuffle = Upsample(scale_factor=up_scale)
         else:
+            self.conv = nn.Conv2d(in_channels, in_channels * up_scale ** 2, kernel_size=3, padding=1)
             self.pixel_shuffle = nn.PixelShuffle(up_scale)
         self.prelu = nn.PReLU()
 
@@ -117,6 +119,25 @@ class Upsample(nn.Module):
 
     def forward(self, x):
         return F.interpolate(x, scale_factor=self.scale, mode=self.mode)
+
+
+class Concat(nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = 1
+        self.backend = 'megengine' if use_mge else 'pytorch'
+        self.concat = self.func_cat()
+
+    def func_cat(self):
+        func_cat = None
+        if self.backend == 'megengine':
+            func_cat = F.concat
+        elif self.backend == 'pytorch':
+            func_cat = torch.cat
+        return func_cat
+
+    def forward(self, x, dim=None):
+        return self.concat(x, dim if dim is not None else self.dim)
 
 
 if __name__ == '__main__':

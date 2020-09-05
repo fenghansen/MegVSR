@@ -104,6 +104,8 @@ def plot_sample(img_lr, img_sr, img_hr, save_path, frame_id, plot_path='./images
         model_name: img_sr,
         'Original': img_hr
     }
+    if os._exists(save_path) is not True:
+        os.makedirs(save_path)
     plt.imsave(os.path.join(save_path, "{}_out.png".format(filename)), img_sr)
     # Plot the images. Note: rescaling and using squeeze since we are getting batches of size 1
     fig, axes = plt.subplots(1, 3, figsize=(30, 8))
