@@ -1,6 +1,8 @@
 # custom
 saved_model/
 images/
+.vscode/
+*.json
 *.pth
 *.png
 *.jpg

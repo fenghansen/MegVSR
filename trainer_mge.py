@@ -15,7 +15,7 @@ if __name__ == '__main__':
     sample_dir = "./images/samples"
     test_dir = "./images/test"
     train_steps = 1000
-    batch_size = 8
+    batch_size = 3
     crop_per_image = 4
     crop_size = 64
     num_workers = 2
@@ -62,12 +62,12 @@ if __name__ == '__main__':
         imgs_lr = torch.tensor(dtype=np.float32)
         imgs_hr = torch.tensor(dtype=np.float32)
 
-        for epoch in range(lastepoch+1, 501):
+        for epoch in range(lastepoch+1, 25):
             for video_id in range(train_dst.num_of_videos):
                 train_dst.video_id = video_id
 
                 sampler_train = RandomSampler(dataset=train_dst, batch_size=batch_size)
-                sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=batch_size//2)
+                sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
 
                 dataloader_train = DataLoader(train_dst, sampler=sampler_train, num_workers=num_workers)
                 dataloader_eval = DataLoader(eval_dst, sampler=sampler_eval, num_workers=num_workers)
@@ -102,6 +102,18 @@ if __name__ == '__main__':
             for g in optimizer.param_groups:
                 g['lr'] = learning_rate
             log(f"learning_rate: {learning_rate:.6f}")
+
+            # 存储模型
+            if epoch % save_freq == 0:
+                model_dict = net.module.state_dict() if multi_gpu else net.state_dict()
+                state = {
+                    'net': model_dict,
+                    'opt': optimizer.state_dict(),
+                }
+                save_path = os.path.join(model_dir, 'RRDB.mge.state_e%04d'%((epoch//10) * 10))
+                torch.save(state, save_path)
+                torch.save(state, 'last_model.pkl')
+
             # 输出采样
             if epoch % plot_freq == 0:
                 net.eval()
@@ -126,16 +138,6 @@ if __name__ == '__main__':
                         plot_sample(img_lr, img_sr, img_hr, frame_id=frame_id[0], epoch=epoch,
                                     save_path=sample_dir, plot_path=sample_dir, model_name='RRDB_6')
                                     
-            # 存储模型
-            if epoch % save_freq == 0:
-                model_dict = net.module.state_dict() if multi_gpu else net.state_dict()
-                state = {
-                    'net': model_dict,
-                    'opt': optimizer.state_dict(),
-                }
-                save_path = os.path.join(model_dir, 'RRDB.mge.state_e%04d'%((epoch//10) * 10))
-                torch.save(state, save_path)
-                torch.save(state, 'last_model.pkl')
 
     elif mode == 'test':
         test_dst = MegVSR_Test_Dataset(root_dir)
@@ -143,7 +145,7 @@ if __name__ == '__main__':
 
         for video_id in range(90, 90+test_dst.num_of_videos):
             test_dst.video_id = video_id
-            sampler_test = SequentialSampler(dataset=test_dst, batch_size=batch_size//2)
+            sampler_test = SequentialSampler(dataset=test_dst, batch_size=1)
             dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
