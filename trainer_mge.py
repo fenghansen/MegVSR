@@ -25,6 +25,7 @@ if __name__ == '__main__':
     save_freq = 1
     plot_freq = 1
     mode = 'test'
+    symbolic = False
 
     net = SRResnet(nb=8)
     optimizer = Adam(net.parameters(), lr=learning_rate)
@@ -34,21 +35,23 @@ if __name__ == '__main__':
 
     random.seed(100)
 
-    @trace()
+    @trace(symbolic=symbolic)
     def train_iter(imgs_lr, imgs_hr):
+        net.train()
         imgs_sr = net(imgs_lr)
         loss = F.l1_loss(imgs_hr, imgs_sr)
         optimizer.backward(loss)
         imgs_sr = F.clamp(imgs_sr, 0, 1)
         return loss, imgs_sr
     
-    @trace()
+    @trace(symbolic=symbolic)
     def test_iter(imgs_lr):
+        net.eval()
         imgs_sr = net(imgs_lr)
         imgs_sr = F.clamp(imgs_sr, 0, 1)
         return imgs_sr
     
-    @trace()
+    @trace(symbolic=symbolic)
     def PSNR_Loss(low, high):
         return -10.0 * F.log(F.mean(F.power(high-low, 2))) / F.log(torch.tensor(10.0))
 
@@ -56,7 +59,9 @@ if __name__ == '__main__':
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image)
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, mode='eval')
 
-        net.train()
+        imgs_lr = torch.tensor(dtype=np.float32)
+        imgs_hr = torch.tensor(dtype=np.float32)
+
         for epoch in range(lastepoch+1, 501):
             for video_id in range(train_dst.num_of_videos):
                 train_dst.video_id = video_id
@@ -72,8 +77,10 @@ if __name__ == '__main__':
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
-                        imgs_lr = tensor_dim5to4(torch.tensor(data['lr']))
-                        imgs_hr = tensor_dim5to4(torch.tensor(data['hr']))
+                        imgs_lr_np = tensor_dim5to4(data['lr'])
+                        imgs_hr_np = tensor_dim5to4(data['hr'])
+                        imgs_lr.set_value(imgs_lr_np)
+                        imgs_hr.set_value(imgs_hr_np)
 
                         optimizer.zero_grad()
                         loss, imgs_sr = train_iter(imgs_lr, imgs_hr)
@@ -130,9 +137,8 @@ if __name__ == '__main__':
                 torch.save(state, 'last_model.pth')
 
     elif mode == 'test':
-        net.eval()
-
         test_dst = MegVSR_Test_Dataset(root_dir)
+        imgs_lr = torch.tensor(dtype=np.float32)
 
         for video_id in range(90, 90+test_dst.num_of_videos):
             test_dst.video_id = video_id
@@ -144,14 +150,15 @@ if __name__ == '__main__':
                     frame_id = data['frame_id']
 
                     imgs_lr = tensor_dim5to4(data['lr'])
-                    imgs_lr = torch.tensor(imgs_lr, dtype='float32')
+                    imgs_lr.set_value(imgs_lr_np)
+
                     imgs_sr = test_iter(imgs_lr)
                     imgs_sr = imgs_sr.detach().cpu().numpy()
 
                     for i in range(imgs_sr.shape[0]):
                         save_dir = os.path.join(test_dir, video_id[i])
                         # 注意，frame_id是下标，文件名需要+1
-                        save_picture(imgs_sr[i], save_path=save_dir, frame_id=frame_id[i]+1)
+                        save_picture(imgs_sr[i], save_path=save_dir, frame_id="%04d"%(int(frame_id[i])+1))
 
                         # tqdm update
                         t.set_description(f'Video {video_id[0]}')

@@ -30,11 +30,12 @@ if __name__ == '__main__':
     # tiny
     # net = RRDBNet(nf=64, nb=3)
     # normal
-    net = SRResnet(nb=16)
+    # net = SRResnet(nb=16)
+    net = SR_RRDB(nb=6)
     optimizer = Adam(net.parameters(), lr=learning_rate)
     # load weight
-    # model = torch.load('last_model.pth')
-    # net.load_state_dict(model['net'])
+    model = torch.load('last_model.pth')
+    net.load_state_dict(model['net'])
     # optimizer.load_state_dict(model['opt'])
 
     random.seed(100)
@@ -143,7 +144,7 @@ if __name__ == '__main__':
                     for i in range(imgs_sr.shape[0]):
                         save_dir = os.path.join(test_dir, video_id[i])
                         # 注意，frame_id是下标，文件名需要+1
-                        save_picture(imgs_sr[i], save_path=save_dir, frame_id=frame_id[i]+1)
+                        save_picture(imgs_sr[i], save_path=save_dir, frame_id="%04d"%(int(frame_id[i])+1))
 
                         # tqdm update
                         t.set_description(f'Video {video_id[0]}')
