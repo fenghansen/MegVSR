@@ -37,7 +37,7 @@ class SRResnet(nn.Module):
 
 
 class SR_RRDB(nn.Module):
-    def __init__(self, in_nc=3, out_nc=3, nf=64, nb=5, gc=32):
+    def __init__(self, in_nc=3, out_nc=3, nf=64, nb=5, gc=32, cv2_INTER=True):
         super().__init__()
         RRDB_block_f = functools.partial(RRDB, nf=nf, gc=gc)
         self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
@@ -49,10 +49,13 @@ class SR_RRDB(nn.Module):
         self.conv_last = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
 
         self.lrelu = nn.LeakyReLU(negative_slope=0.2)
-        if use_mge:
-            self.bicubic = Upsample(scale_factor=4, mode='BILINEAR')
-        else:
-            self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
+
+        self.cv2_INTER = cv2_INTER
+        if self.cv2_INTER is False:
+            if use_mge:
+                self.bicubic = Upsample(scale_factor=4, mode='BILINEAR')
+            else:
+                self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
         fea = self.conv_first(x)
@@ -61,9 +64,11 @@ class SR_RRDB(nn.Module):
 
         fea = self.upsample(fea)
         out = self.conv_last(self.lrelu(self.HRconv(fea)))
-        # imgs_bc = self.bicubic(x)
+        if self.cv2_INTER is False:
+            imgs_bc = self.bicubic(x)
+            out = out + imgs_bc
 
-        return out# + imgs_bc
+        return out
 
 class RRDBNet(nn.Module):
     def __init__(self, in_nc=3, out_nc=3, nf=64, nb=23, gc=32):

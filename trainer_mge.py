@@ -19,36 +19,41 @@ if __name__ == '__main__':
     batch_size = 8
     crop_per_image = 4
     crop_size = 64
-    num_workers = 2
+    num_workers = 8
     step_size = 4
     learning_rate = 1e-4
-    lastepoch = 25
+    lastepoch = 0
     save_freq = 1
     plot_freq = 1
     mode = 'train'
     symbolic = True
+    cv2_INTER = True
 
-    net = SR_RRDB(nf=64, nb=6)
+    net = SR_RRDB(nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    model = torch.load('last_model.pth')
+    model = torch.load('./saved_model/RRDB_6.mge.state_e0000')
     net.load_state_dict(model['net'])
 
     random.seed(100)
 
     @trace(symbolic=symbolic)
-    def train_iter(imgs_lr, imgs_hr):
+    def train_iter(imgs_lr, imgs_hr, imgs_bc=None):
         net.train()
         imgs_sr = net(imgs_lr)
+        if imgs_bc is not None:
+            imgs_sr = imgs_sr + imgs_bc
         loss = F.l1_loss(imgs_hr, imgs_sr)
         optimizer.backward(loss)
         imgs_sr = F.clamp(imgs_sr, 0, 1)
         return loss, imgs_sr
     
     @trace(symbolic=symbolic)
-    def test_iter(imgs_lr):
+    def test_iter(imgs_lr, imgs_bc=None):
         net.eval()
         imgs_sr = net(imgs_lr)
+        if imgs_bc is not None:
+            imgs_sr = imgs_sr + imgs_bc
         imgs_sr = F.clamp(imgs_sr, 0, 1)
         return imgs_sr
     
@@ -57,11 +62,12 @@ if __name__ == '__main__':
         return -10.0 * F.log(F.mean(F.power(high-low, 2))) / F.log(torch.tensor(10.0))
 
     if mode == 'train':
-        train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image)
-        eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, mode='eval')
+        train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, cv2_INTER=cv2_INTER)
+        eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, mode='eval', cv2_INTER=cv2_INTER)
 
         imgs_lr = torch.tensor(dtype=np.float32)
         imgs_hr = torch.tensor(dtype=np.float32)
+        imgs_bc = torch.tensor(dtype=np.float32)
 
         for epoch in range(lastepoch+1, 25):
             for video_id in range(train_dst.num_of_videos):
@@ -82,9 +88,15 @@ if __name__ == '__main__':
                         imgs_hr_np = tensor_dim5to4(data['hr'])
                         imgs_lr.set_value(imgs_lr_np)
                         imgs_hr.set_value(imgs_hr_np)
+                        if cv2_INTER:
+                            imgs_bc_np = tensor_dim5to4(data['bc'])
+                            imgs_bc.set_value(imgs_bc_np)
 
                         optimizer.zero_grad()
-                        loss, imgs_sr = train_iter(imgs_lr, imgs_hr)
+                        if cv2_INTER:
+                            loss, imgs_sr = train_iter(imgs_lr, imgs_hr, imgs_bc)
+                        else:
+                            loss, imgs_sr = train_iter(imgs_lr, imgs_hr)
                         optimizer.step()
 
                         # 更新tqdm的参数
@@ -127,7 +139,12 @@ if __name__ == '__main__':
                         imgs_lr.set_value(imgs_lr_np)
                         imgs_hr.set_value(imgs_hr_np)
                         
-                        imgs_sr = test_iter(imgs_lr)
+                        if cv2_INTER:
+                            imgs_bc_np = tensor_dim5to4(data['bc'])
+                            imgs_bc.set_value(imgs_bc_np)
+                            imgs_sr = test_iter(imgs_lr, imgs_bc)
+                        else:
+                            imgs_sr = test_iter(imgs_lr)
                         
                         img_lr = imgs_lr[0].numpy()
                         img_sr = imgs_sr[0].numpy()
@@ -143,10 +160,11 @@ if __name__ == '__main__':
     elif mode == 'test':
         test_dst = MegVSR_Test_Dataset(root_dir)
         imgs_lr = torch.tensor(dtype=np.float32)
+        imgs_bc = torch.tensor(dtype=np.float32)
 
         for video_id in range(90, 90+test_dst.num_of_videos):
             test_dst.video_id = video_id
-            sampler_test = SequentialSampler(dataset=test_dst, batch_size=1)
+            sampler_test = SequentialSampler(dataset=test_dst, batch_size=1, cv2_INTER=cv2_INTER)
             dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
@@ -155,8 +173,13 @@ if __name__ == '__main__':
 
                     imgs_lr_np = tensor_dim5to4(data['lr'])
                     imgs_lr.set_value(imgs_lr_np)
+                    if cv2_INTER:
+                        imgs_bc_np = tensor_dim5to4(data['bc'])
+                        imgs_bc.set_value(imgs_bc_np)
+                        imgs_sr = test_iter(imgs_lr, imgs_bc)
+                    else:
+                        imgs_sr = test_iter(imgs_lr)
 
-                    imgs_sr = test_iter(imgs_lr)
                     imgs_sr = imgs_sr.numpy()
 
                     for i in range(imgs_sr.shape[0]):

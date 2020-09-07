@@ -92,9 +92,10 @@ class MegVSR_Dataset(Dataset):
 
 
 class MegVSR_Test_Dataset(Dataset):
-    def __init__(self, root_dir):
+    def __init__(self, root_dir, cv2_INTER=True):
         super().__init__()
         self.root_dir = root_dir
+        self.cv2_INTER = cv2_INTER
         self.initialization()
     
     def initialization(self):
@@ -134,10 +135,21 @@ class MegVSR_Test_Dataset(Dataset):
         video_id = video_frame['id']
         lr_img = cv2.imread(video_frame['lr_frames'][idx])[:,:,::-1]
         lr_crops = np.expand_dims(lr_img, 0)
+        if self.cv2_INTER:
+            b, h, w, c = lr_crops.shape
+            bc_crops = np.zeros((b, h*4, w*4, c))
+            for i in range(b):
+                bc_crops[i, ...] = cv2.resize(lr_crops[i], None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+            bc_crops = np.clip(bc_crops, 0, 255)
+
         lr_crops = scale_down(lr_crops.transpose(0,3,1,2))
         data['frame_id'] = '%04d' % idx
         data['video_id'] = '%02d' % video_id
         data['lr'] = np.ascontiguousarray(lr_crops)
+
+        if self.cv2_INTER:
+            bc_crops = scale_down(bc_crops.transpose(0,3,1,2))
+            data['bc'] = np.ascontiguousarray(bc_crops)
 
         return data
 
