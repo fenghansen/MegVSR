@@ -3,7 +3,6 @@ import time
 import random
 from functools import lru_cache
 
-import torch as pytorch
 from datasets import *
 from utils import *
 from models import *
@@ -32,8 +31,8 @@ if __name__ == '__main__':
     net = SR_RRDB(nf=64, nb=6)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    # model = pytorch.load('last_model.pth')
-    # net.load_state_dict(model['net'])
+    model = torch.load('last_model.pth')
+    net.load_state_dict(model['net'])
 
     random.seed(100)
 

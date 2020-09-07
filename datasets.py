@@ -7,11 +7,12 @@ from matplotlib import pyplot as plt
 from utils import *
 
 class MegVSR_Dataset(Dataset):
-    def __init__(self, root_dir, crop_size=32, crop_per_image=4, mode='train'):
+    def __init__(self, root_dir, crop_size=32, crop_per_image=4, cv2_INTER=True, mode='train'):
         super().__init__()
         self.root_dir = root_dir
         self.crop_per_image = crop_per_image
         self.crop_size = 32
+        self.cv2_INTER = cv2_INTER
         self.mode = mode
         self.initialization()
     
@@ -69,13 +70,23 @@ class MegVSR_Dataset(Dataset):
             lr_crops = np.expand_dims(lr_img, 0)
             hr_crops = np.expand_dims(hr_img, 0)
 
+        if self.cv2_INTER:
+            bc_crops = np.zeros_like(hr_crops)
+            for i in range(lr_crops.shape[0]):
+                bc_crops[i, ...] = cv2.resize(lr_crops[i], None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+            bc_crops = np.clip(bc_crops, 0, 255)
+
         lr_crops = lr_crops.transpose(0,3,1,2).astype(np.float32) / 255.
         hr_crops = hr_crops.transpose(0,3,1,2).astype(np.float32) / 255.
+        if self.cv2_INTER:
+            bc_crops = bc_crops.transpose(0,3,1,2).astype(np.float32) / 255.
 
         data['frame_id'] = '%04d' % idx
         data['video_id'] = '%02d' % video_id
         data['lr'] = np.ascontiguousarray(lr_crops)
         data['hr'] = np.ascontiguousarray(hr_crops)
+        if self.cv2_INTER:
+            data['bc'] = np.ascontiguousarray(bc_crops)
 
         return data
 
@@ -212,13 +223,13 @@ def data_aug(image, mode):
 
 if __name__=='__main__':
     crop_per_image = 4
-    dst = MegVSR_Dataset('F:/datasets/MegVSR', crop_per_image=crop_per_image)
-    dataloader_train = DataLoader(dst, batch_size=8, shuffle=True, num_workers=0)
+    dst = MegVSR_Dataset('F:/datasets/MegVSR', crop_per_image=crop_per_image, mode='train')
+    dataloader_train = DataLoader(dst, batch_size=1, shuffle=True, num_workers=0)
     for i in range(10):
         dst.video_id = i
         for k, data in enumerate(dataloader_train):
             # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
-            imgs_lr = tensor_dim5to4(data['lr'])
+            imgs_lr = tensor_dim5to4(data['bc'])
             imgs_hr = tensor_dim5to4(data['hr'])
             print(data['video_id'], data['frame_id'])
             fig = plt.figure(figsize=(16,10))

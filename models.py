@@ -61,9 +61,9 @@ class SR_RRDB(nn.Module):
 
         fea = self.upsample(fea)
         out = self.conv_last(self.lrelu(self.HRconv(fea)))
-        imgs_bc = self.bicubic(x)
+        # imgs_bc = self.bicubic(x)
 
-        return out + imgs_bc
+        return out# + imgs_bc
 
 class RRDBNet(nn.Module):
     def __init__(self, in_nc=3, out_nc=3, nf=64, nb=23, gc=32):
