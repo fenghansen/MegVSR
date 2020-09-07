@@ -20,9 +20,10 @@ if __name__ == '__main__':
     crop_per_image = 4
     crop_size = 64
     num_workers = 8
-    step_size = 4
-    learning_rate = 1e-4
-    lastepoch = 0
+    step_size = 2
+    learning_rate = 8e-5
+    last_epoch = 0
+    stop_epoch = 20
     save_freq = 1
     plot_freq = 1
     mode = 'train'
@@ -32,8 +33,9 @@ if __name__ == '__main__':
     net = SR_RRDB(nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    model = torch.load('./saved_model/RRDB_6.mge.state_e0000')
+    model = torch.load('last_model.pkl')
     net.load_state_dict(model['net'])
+    optimizer.load_state_dict(model['opt'])
 
     random.seed(100)
 
@@ -69,7 +71,7 @@ if __name__ == '__main__':
         imgs_hr = torch.tensor(dtype=np.float32)
         imgs_bc = torch.tensor(dtype=np.float32)
 
-        for epoch in range(lastepoch+1, 25):
+        for epoch in range(last_epoch+1, stop_epoch+1):
             for video_id in range(train_dst.num_of_videos):
                 train_dst.video_id = video_id
 
@@ -111,7 +113,7 @@ if __name__ == '__main__':
                         t.update(1)
             
             # 更新学习率
-            learning_rate *= 0.9
+            learning_rate *= 0.8
             for g in optimizer.param_groups:
                 g['lr'] = learning_rate
             log(f"learning_rate: {learning_rate:.6f}")
@@ -123,9 +125,9 @@ if __name__ == '__main__':
                     'net': model_dict,
                     'opt': optimizer.state_dict(),
                 }
-                save_path = os.path.join(model_dir, f'{model_name}.mge.state_e{(epoch//10)*10:%04d}')
-                torch.save(state, save_path)
+                save_path = os.path.join(model_dir, 'RRDB_6.mge.state_e%04d'% (epoch//10)*10 )
                 torch.save(state, 'last_model.pkl')
+                torch.save(state, save_path)
 
             # 输出采样
             if epoch % plot_freq == 0:

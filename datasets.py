@@ -7,8 +7,11 @@ from matplotlib import pyplot as plt
 from utils import *
 
 class MegVSR_Dataset(Dataset):
-    def __init__(self, root_dir, crop_size=32, crop_per_image=4, cv2_INTER=True, mode='train'):
+    def __init__(self, root_dir, crop_size=32, crop_per_image=4, 
+                nflames=3, cv2_INTER=True, mode='train'):
         super().__init__()
+        self.buffer = []
+        self.nflames = nflames
         self.root_dir = root_dir
         self.crop_per_image = crop_per_image
         self.crop_size = 32
@@ -57,7 +60,25 @@ class MegVSR_Dataset(Dataset):
     def __len__(self):
         return self.frame_paths[self.video_id]['len']
     
-    def __getitem__(self, idx):
+    def next_video(self):
+        self.video_id += 1
+        del self.buffer
+    
+    def buffer_stack_on_channels(self):
+        data = {}
+        r = self.nflames // 2
+        data['frame_id'] = self.buffer[r]['frame_id']
+        data['video_id'] = self.buffer[r]['video_id']
+        b, c, h, w = self.buffer[r]['lr'].shape
+        data['lr'] = np.zeros((b, c*self.nflames, h, w))
+        data['hr'] = np.zeros((b, c*self.nflames, h*4, w*4))
+        for i, frame in enumerate(self.buffer):
+            data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
+            data['hr'][:, c*i:c*(i+1), :, :] = frame['hr']
+        
+        return data
+    
+    def getitem(self, idx):
         data = {}
         video_frame = self.frame_paths[self.video_id]
         video_id = video_frame['id']
@@ -89,6 +110,31 @@ class MegVSR_Dataset(Dataset):
             data['bc'] = np.ascontiguousarray(bc_crops)
 
         return data
+
+    def __getitem__(self, idx):
+        r = self.nflames // 2
+        data = None
+        # 首位置，前相邻帧为本帧
+        if idx == 0:
+            data = self.getitem(idx)
+            self.buffer = [data] * (r + 1)
+            for i in range(1, r):
+                data = self.getitem(idx+i)
+                self.buffer.append(data)
+        else:
+            # 其余位置删除最前帧，向末尾添加下一帧
+            del self.buffer[0]
+        
+        # 最后一帧前，末尾都是下一帧
+        if idx != self.frame_paths[self.video_id]['len'] - r:
+            data = self.getitem(idx+r)
+        else:
+            # 最后一帧时，末尾为本帧（上一帧的下一帧）
+            data = self.buffer[-1]
+
+        self.buffer.append(data)
+        
+        return self.buffer_stack_on_channels()
 
 
 class MegVSR_Test_Dataset(Dataset):
