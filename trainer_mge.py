@@ -11,23 +11,25 @@ from models import *
 if __name__ == '__main__':
     device = 'cuda' if torch.is_cuda_available() else 'cpu'
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
+    model_name = "RRDB_6"
     model_dir = "./saved_model"
-    sample_dir = "./images/samples"
+    sample_dir = f"./images/samples-{model_name}"
     test_dir = "./images/test"
+    os.makedirs(sample_dir, exist_ok=True)
     train_steps = 1000
-    batch_size = 3
+    batch_size = 8
     crop_per_image = 4
     crop_size = 64
     num_workers = 2
     step_size = 4
     learning_rate = 1e-4
-    lastepoch = 20
+    lastepoch = 25
     save_freq = 1
     plot_freq = 1
     mode = 'train'
     symbolic = True
 
-    net = SR_RRDB(nf=64, nb=8)
+    net = SR_RRDB(nf=64, nb=6)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
     # model = pytorch.load('last_model.pth')
@@ -110,7 +112,7 @@ if __name__ == '__main__':
                     'net': model_dict,
                     'opt': optimizer.state_dict(),
                 }
-                save_path = os.path.join(model_dir, 'RRDB.mge.state_e%04d'%((epoch//10) * 10))
+                save_path = os.path.join(model_dir, f'{model_name}.mge.state_e{(epoch//10)*10:%04d}')
                 torch.save(state, save_path)
                 torch.save(state, 'last_model.pkl')
 
@@ -136,7 +138,7 @@ if __name__ == '__main__':
                         t.update(1)
 
                         plot_sample(img_lr, img_sr, img_hr, frame_id=frame_id[0], epoch=epoch,
-                                    save_path=sample_dir, plot_path=sample_dir, model_name='RRDB_6')
+                                    save_path=sample_dir, plot_path=sample_dir, model_name=model_name)
                                     
 
     elif mode == 'test':
