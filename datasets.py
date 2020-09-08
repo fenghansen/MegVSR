@@ -185,9 +185,10 @@ class MegVSR_Dataset(Dataset):
 
 
 class MegVSR_Test_Dataset(Dataset):
-    def __init__(self, root_dir, cv2_INTER=True):
+    def __init__(self, root_dir, nflames=3, cv2_INTER=True):
         super().__init__()
         self.root_dir = root_dir
+        self.nflames = nflames
         self.cv2_INTER = cv2_INTER
         self.initialization()
     

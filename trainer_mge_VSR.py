@@ -10,7 +10,7 @@ from models import *
 if __name__ == '__main__':
     device = 'cuda' if torch.is_cuda_available() else 'cpu'
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
-    model_name = "RRDB_multi_6"
+    model_name = "VRRDB_6"
     model_dir = "./saved_model"
     sample_dir = f"./images/samples-{model_name}"
     test_dir = "./images/test"
@@ -19,8 +19,8 @@ if __name__ == '__main__':
     batch_size = 8
     crop_per_image = 4
     crop_size = 64
-    nflames = 1
-    num_workers = 4
+    nflames = 3
+    num_workers = 0
     step_size = 2
     learning_rate = 1e-4
     last_epoch = 0
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     symbolic = True
     cv2_INTER = True
 
-    net = SR_RRDB(nf=64, nb=6, cv2_INTER=cv2_INTER)
+    net = VSR_RRDB(in_nc=9, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
     # model = torch.load('last_model.pkl')
@@ -78,7 +78,7 @@ if __name__ == '__main__':
             for video_id in range(train_dst.num_of_videos):
                 train_dst.video_id = video_id
 
-                sampler_train = RandomSampler(dataset=train_dst, batch_size=batch_size)
+                sampler_train = SequentialSampler(dataset=train_dst, batch_size=batch_size)
                 sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
 
                 dataloader_train = DataLoader(train_dst, sampler=sampler_train, num_workers=num_workers)
@@ -130,7 +130,7 @@ if __name__ == '__main__':
                     'net': model_dict,
                     'opt': optimizer.state_dict(),
                 }
-                save_path = os.path.join(model_dir, 'RRDB_6.mge.state_e%04d'% ((epoch//10)*10) )
+                save_path = os.path.join(model_dir, 'VRRDB_6.mge.state_e%04d'% ((epoch//10)*10) )
                 torch.save(state, 'last_model.pkl')
                 torch.save(state, save_path)
 
