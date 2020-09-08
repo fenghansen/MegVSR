@@ -10,19 +10,19 @@ from models import *
 if __name__ == '__main__':
     device = 'cuda' if torch.is_cuda_available() else 'cpu'
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
-    model_name = "RRDB_multi_6"
+    model_name = "RRDB_6"
     model_dir = "./saved_model"
     sample_dir = f"./images/samples-{model_name}"
     test_dir = "./images/test"
     os.makedirs(sample_dir, exist_ok=True)
     train_steps = 1000
-    batch_size = 8
+    batch_size = 4
     crop_per_image = 4
-    crop_size = 48
+    crop_size = 64
     nflames = 1
     num_workers = 4
     step_size = 2
-    learning_rate = 2e-5
+    learning_rate = 1e-5
     last_epoch = 20
     stop_epoch = 30
     save_freq = 1
@@ -37,6 +37,9 @@ if __name__ == '__main__':
     model = torch.load('last_model.pkl')
     net.load_state_dict(model['net'])
     optimizer.load_state_dict(model['opt'])
+    for g in optimizer.param_groups:
+        g['lr'] = learning_rate
+    log(f"learning_rate: {learning_rate:.6f}")
 
     random.seed(100)
 
@@ -153,7 +156,7 @@ if __name__ == '__main__':
                         else:
                             imgs_sr = test_iter(imgs_lr)
                         
-                        img_lr = imgs_lr[0].numpy()[:,center_frame*3:center_frame*3+3,:,:]
+                        img_lr = imgs_lr[0].numpy()[center_frame*3:center_frame*3+3,:,:]
                         img_sr = imgs_sr[0].numpy()
                         img_hr = imgs_hr[0].numpy()
 
