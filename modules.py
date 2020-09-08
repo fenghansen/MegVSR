@@ -19,14 +19,50 @@ def make_layer(block, n_layers):
         layers.append(block)
     return nn.Sequential(*layers)
 
+class ResidualBlockNoBN(nn.Module):
+    """Residual block without BN.
+
+    It has a style of:
+        ---Conv-ReLU-Conv-+-
+         |________________|
+
+    Args:
+        nf (int): Channel number of intermediate features.
+            Default: 64.
+        res_scale (float): Residual scale. Default: 1.
+    """
+
+    def __init__(self, nf=64, res_scale=1):
+        super(ResidualBlockNoBN, self).__init__()
+        self.res_scale = res_scale
+        self.conv1 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.conv2 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.lrelu = nn.LeakyReLU()
+
+    def forward(self, x):
+        identity = x
+        out = self.conv2(self.lrelu(self.conv1(x)))
+        return identity + out * self.res_scale
+
 class ResidualBlock(nn.Module):
-    def __init__(self, channels=64, momentum=0.8):
+    """Residual block with BN.
+
+    It has a style of:
+        ---Conv-BN_PReLU-Conv-BN-+-
+         |_______________________|
+
+    Args:
+        nf (int): Channel number of intermediate features.
+            Default: 64.
+        momentum (float): Momentum of BN. Default: 0.8
+    """
+    def __init__(self, nf=64, momentum=0.8):
         super(ResidualBlock, self).__init__()
-        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(channels, momentum=momentum)
+        self.conv1 = nn.Conv2d(nf, nf, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(nf, momentum=momentum)
         self.prelu = nn.PReLU()
-        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(channels, momentum=momentum)
+        self.conv2 = nn.Conv2d(nf, nf, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(nf, momentum=momentum)
 
     def forward(self, x):
         residual = self.conv1(x)
@@ -74,6 +110,101 @@ class RRDB(nn.Module):
         out = self.RDB2(out)
         out = self.RDB3(out)
         return out * 0.2 + x
+
+
+class TSAFusion(nn.Module):
+    # Copy from EDVR (不Copy PCD是因为不会改成MegEngine版)
+    """Temporal Spatial Attention (TSA) fusion module.
+    Temporal: Calculate the correlation between center frame and
+        neighboring frames;
+    Spatial: It has 3 pyramid levels, the attention is similar to SFT.
+        (SFT: Recovering realistic texture in image super-resolution by deep
+            spatial feature transform.)
+    Args:
+        nf (int): Channel number of middle features. Default: 64.
+        nframes (int): Number of frames. Default: 5.
+        center_frame_idx (int): The index of center frame. Default: 2.
+    """
+
+    def __init__(self, nf=64, nframes=5, center_frame_idx=2):
+        super(TSAFusion, self).__init__()
+        self.center_frame_idx = center_frame_idx
+        # temporal attention (before fusion conv)
+        self.temporal_attn1 = nn.Conv2d(nf, nf, 3, 1, 1)
+        self.temporal_attn2 = nn.Conv2d(nf, nf, 3, 1, 1)
+        self.feat_fusion = nn.Conv2d(nframes * nf, nf, 1, 1)
+
+        # spatial attention (after fusion conv)
+        self.max_pool = nn.MaxPool2d(3, stride=2, padding=1)
+        self.avg_pool = nn.AvgPool2d(3, stride=2, padding=1)
+        self.spatial_attn1 = nn.Conv2d(nframes * nf, nf, 1)
+        self.spatial_attn2 = nn.Conv2d(nf * 2, nf, 1)
+        self.spatial_attn3 = nn.Conv2d(nf, nf, 3, 1, 1)
+        self.spatial_attn4 = nn.Conv2d(nf, nf, 1)
+        self.spatial_attn5 = nn.Conv2d(nf, nf, 3, 1, 1)
+        self.spatial_attn_l1 = nn.Conv2d(nf, nf, 1)
+        self.spatial_attn_l2 = nn.Conv2d(nf * 2, nf, 3, 1, 1)
+        self.spatial_attn_l3 = nn.Conv2d(nf, nf, 3, 1, 1)
+        self.spatial_attn_add1 = nn.Conv2d(nf, nf, 1)
+        self.spatial_attn_add2 = nn.Conv2d(nf, nf, 1)
+
+        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+        self.upsample = nn.Upsample(
+            scale_factor=2, mode='bilinear', align_corners=False)
+
+    def forward(self, aligned_feat):
+        """
+        Args:
+            aligned_feat (Tensor): Aligned features with shape (b, t, c, h, w).
+        Returns:
+            Tensor: Features after TSA with the shape (b, c, h, w).
+        """
+        b, t, c, h, w = aligned_feat.size()
+        # temporal attention
+        embedding_ref = self.temporal_attn1(
+            aligned_feat[:, self.center_frame_idx, :, :, :].clone())
+        embedding = self.temporal_attn2(aligned_feat.view(-1, c, h, w))
+        embedding = embedding.view(b, t, -1, h, w)  # (b, t, c, h, w)
+
+        corr_l = []  # correlation list
+        for i in range(t):
+            emb_neighbor = embedding[:, i, :, :, :]
+            corr = torch.sum(emb_neighbor * embedding_ref, 1)  # (b, h, w)
+            corr_l.append(corr.unsqueeze(1))  # (b, 1, h, w)
+        corr_prob = torch.sigmoid(torch.cat(corr_l, dim=1))  # (b, t, h, w)
+        corr_prob = corr_prob.unsqueeze(2).expand(b, t, c, h, w)
+        corr_prob = corr_prob.contiguous().view(b, -1, h, w)  # (b, t*c, h, w)
+        aligned_feat = aligned_feat.view(b, -1, h, w) * corr_prob
+
+        # fusion
+        feat = self.lrelu(self.feat_fusion(aligned_feat))
+
+        # spatial attention
+        attn = self.lrelu(self.spatial_attn1(aligned_feat))
+        attn_max = self.max_pool(attn)
+        attn_avg = self.avg_pool(attn)
+        attn = self.lrelu(
+            self.spatial_attn2(torch.cat([attn_max, attn_avg], dim=1)))
+        # pyramid levels
+        attn_level = self.lrelu(self.spatial_attn_l1(attn))
+        attn_max = self.max_pool(attn_level)
+        attn_avg = self.avg_pool(attn_level)
+        attn_level = self.lrelu(
+            self.spatial_attn_l2(torch.cat([attn_max, attn_avg], dim=1)))
+        attn_level = self.lrelu(self.spatial_attn_l3(attn_level))
+        attn_level = self.upsample(attn_level)
+
+        attn = self.lrelu(self.spatial_attn3(attn)) + attn_level
+        attn = self.lrelu(self.spatial_attn4(attn))
+        attn = self.upsample(attn)
+        attn = self.spatial_attn5(attn)
+        attn_add = self.spatial_attn_add2(
+            self.lrelu(self.spatial_attn_add1(attn)))
+        attn = torch.sigmoid(attn)
+
+        # after initialization, * 2 makes (attn * 2) to be close to 1.
+        feat = feat * attn * 2 + attn_add
+        return feat
 
 
 class UpsampleBLock(nn.Module):

@@ -14,7 +14,7 @@ class MegVSR_Dataset(Dataset):
         self.nflames = nflames
         self.root_dir = root_dir
         self.crop_per_image = crop_per_image
-        self.crop_size = 32
+        self.crop_size = crop_size
         self.cv2_INTER = cv2_INTER
         self.mode = mode
         self.initialization()
@@ -60,10 +60,48 @@ class MegVSR_Dataset(Dataset):
     def __len__(self):
         return self.frame_paths[self.video_id]['len']
     
-    def next_video(self):
-        self.video_id += 1
+    def next_video(self, idx):
+        self.video_id = idx
         del self.buffer
+        self.buffer = []
+        # crop corner
+        self.get_flame_shape()
+        self.h_start = np.random.randint(0, self.h - self.crop_size)
+        self.w_start = np.random.randint(0, self.w - self.crop_size)
+        self.h_end = self.h_start + self.crop_size
+        self.w_end = self.w_start + self.crop_size 
+        self.aug = 0#np.random.randint(8)
     
+    def get_flame_shape(self):
+        video_frame = self.frame_paths[self.video_id]
+        lr_img = cv2.imread(video_frame['lr_frames'][0])[:,:,::-1]
+        self.h, self.w, self.c = lr_img.shape
+    
+    def video_crop(self, lr_img, hr_img):
+        # 本函数用于将numpy随机裁剪成以crop_size为边长的方形crop_per_image等份
+        if use_mge:
+            is_tensor = False
+        else:
+            is_tensor = torch.is_tensor(lr_img)
+
+        h, w, c = lr_img.shape
+        # 创建空numpy做画布
+        lr_crops = np.zeros((self.crop_per_image, self.crop_size, self.crop_size, c))
+        hr_crops = np.zeros((self.crop_per_image, self.crop_size*4, self.crop_size*4, c))
+
+        # 往空tensor的通道上贴patchs
+        for i in range(crop_per_image):
+            lr_crop = lr_img[self.h_start:self.h_end, self.w_start:self.w_end, :]
+            hr_crop = hr_img[self.h_start*4:self.h_end*4, self.w_start*4:self.w_end*4, :]
+
+            lr_crop = data_aug(lr_crop, self.aug)
+            hr_crop = data_aug(hr_crop, self.aug)
+
+            lr_crops[i:i+1, ...] = lr_crop
+            hr_crops[i:i+1, ...] = hr_crop
+
+        return lr_crops, hr_crops
+
     def buffer_stack_on_channels(self):
         data = {}
         r = self.nflames // 2
@@ -72,12 +110,17 @@ class MegVSR_Dataset(Dataset):
         b, c, h, w = self.buffer[r]['lr'].shape
         data['lr'] = np.zeros((b, c*self.nflames, h, w))
         data['hr'] = np.zeros((b, c*self.nflames, h*4, w*4))
+        if self.cv2_INTER:
+            data['bc'] = np.zeros((b, c*self.nflames, h*4, w*4))
+
         for i, frame in enumerate(self.buffer):
             data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
             data['hr'][:, c*i:c*(i+1), :, :] = frame['hr']
+            if self.cv2_INTER:
+                data['bc'][:, c*i:c*(i+1), :, :] = frame['bc']
         
         return data
-    
+
     def getitem(self, idx):
         data = {}
         video_frame = self.frame_paths[self.video_id]
@@ -85,8 +128,12 @@ class MegVSR_Dataset(Dataset):
         lr_img = cv2.imread(video_frame['lr_frames'][idx])[:,:,::-1]
         hr_img = cv2.imread(video_frame['hr_frames'][idx])[:,:,::-1]
         if self.mode == 'train':
-            lr_crops, hr_crops = random_crop(lr_img, hr_img, aug='SISR',
-                    crop_size=self.crop_size, crop_per_image=self.crop_per_image)
+            if self.nflames > 1:
+                lr_crops, hr_crops = self.video_crop(lr_img, hr_img)
+            else:
+                aug = 'SISR' if nflames == 1 else None
+                lr_crops, hr_crops = random_crop(lr_img, hr_img, aug='SISR',
+                        crop_size=self.crop_size, crop_per_image=self.crop_per_image)
         else:
             lr_crops = np.expand_dims(lr_img, 0)
             hr_crops = np.expand_dims(hr_img, 0)
@@ -175,7 +222,29 @@ class MegVSR_Test_Dataset(Dataset):
     def __len__(self):
         return self.frame_paths[self.video_id-90]['len']
     
-    def __getitem__(self, idx):
+    def next_video(self, idx):
+        self.video_id = idx
+        del self.buffer
+        self.buffer = []
+    
+    def buffer_stack_on_channels(self):
+        data = {}
+        r = self.nflames // 2
+        data['frame_id'] = self.buffer[r]['frame_id']
+        data['video_id'] = self.buffer[r]['video_id']
+        b, c, h, w = self.buffer[r]['lr'].shape
+        data['lr'] = np.zeros((b, c*self.nflames, h, w))
+        if self.cv2_INTER:
+            data['bc'] = np.zeros((b, c*self.nflames, h*4, w*4))
+
+        for i, frame in enumerate(self.buffer):
+            data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
+            if self.cv2_INTER:
+                data['bc'][:, c*i:c*(i+1), :, :] = frame['bc']
+        
+        return data
+    
+    def getitem(self, idx):
         data = {}
         video_frame = self.frame_paths[self.video_id-90]
         video_id = video_frame['id']
@@ -198,10 +267,31 @@ class MegVSR_Test_Dataset(Dataset):
             data['bc'] = np.ascontiguousarray(bc_crops)
 
         return data
+    
+    def __getitem__(self, idx):
+        r = self.nflames // 2
+        data = None
+        # 首位置，前相邻帧为本帧
+        if idx == 0:
+            data = self.getitem(idx)
+            self.buffer = [data] * (r + 1)
+            for i in range(1, r):
+                data = self.getitem(idx+i)
+                self.buffer.append(data)
+        else:
+            # 其余位置删除最前帧，向末尾添加下一帧
+            del self.buffer[0]
+        
+        # 最后一帧前，末尾都是下一帧
+        if idx != self.frame_paths[self.video_id]['len'] - r:
+            data = self.getitem(idx+r)
+        else:
+            # 最后一帧时，末尾为本帧（上一帧的下一帧）
+            data = self.buffer[-1]
 
-
-def MegVSR_DataLoader(DataLoader):
-    pass
+        self.buffer.append(data)
+        
+        return self.buffer_stack_on_channels()
 
 
 def random_crop(lr_img, hr_img, crop_size=32, crop_per_image=8, aug=None):
@@ -281,25 +371,28 @@ def data_aug(image, mode):
 
 if __name__=='__main__':
     crop_per_image = 4
-    dst = MegVSR_Dataset('F:/datasets/MegVSR', crop_per_image=crop_per_image, mode='train')
-    dataloader_train = DataLoader(dst, batch_size=1, shuffle=True, num_workers=0)
-    for i in range(10):
-        dst.video_id = i
+    nflames = 3
+    dst = MegVSR_Dataset('F:/datasets/MegVSR', crop_per_image=crop_per_image, 
+                        mode='train',crop_size=100, nflames=nflames)
+    # dst = MegVSR_Test_Dataset('F:/datasets/MegVSR/', crop_per_image=crop_per_image, 
+                        # mode='train',crop_size=100, nflames=nflames)
+    dataloader_train = DataLoader(dst, batch_size=1, shuffle=False, num_workers=0)
+    for i in range(11,20):
+        dst.next_video(i)
         for k, data in enumerate(dataloader_train):
             # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
             imgs_lr = tensor_dim5to4(data['bc'])
             imgs_hr = tensor_dim5to4(data['hr'])
             print(data['video_id'], data['frame_id'])
-            fig = plt.figure(figsize=(16,10))
-            ax = [None]*2*crop_per_image
-            for i in range(crop_per_image):
-                ax[i*2] = fig.add_subplot(2, crop_per_image, i*2+1)
-                ax[i*2+1] = fig.add_subplot(2, crop_per_image, i*2+2)
-                input_out = np.uint8(imgs_lr[i].numpy().transpose(1,2,0)*255)
-                gt_out = np.uint8(imgs_hr[i].numpy().transpose(1,2,0)*255)
-                ax[i*2].imshow(input_out)
-                ax[i*2+1].imshow(gt_out)
+            fig = plt.figure(figsize=(20,10))
+            ax = [None]*2*nflames
+            input_out = np.uint8(imgs_lr[0].numpy().transpose(1,2,0)*255)
+            gt_out = np.uint8(imgs_hr[0].numpy().transpose(1,2,0)*255)
+            for i in range(nflames):
+                ax[i*2] = fig.add_subplot(2, nflames, i+1)
+                ax[i*2+1] = fig.add_subplot(2, nflames, i+nflames+1)
+                ax[i*2].imshow(input_out[:,:,3*i:3*i+3])
+                ax[i*2+1].imshow(gt_out[:,:,3*i:3*i+3])
             plt.show()
             plt.close()
             print(len(dataloader_train),len(dst))
-            break
