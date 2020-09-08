@@ -18,7 +18,7 @@ if __name__ == '__main__':
     train_steps = 1000
     batch_size = 8
     crop_per_image = 4
-    crop_size = 64
+    crop_size = 32
     nflames = 3
     num_workers = 0
     step_size = 2
@@ -37,6 +37,10 @@ if __name__ == '__main__':
     # model = torch.load('last_model.pkl')
     # net.load_state_dict(model['net'])
     # optimizer.load_state_dict(model['opt'])
+
+    for g in optimizer.param_groups:
+        g['lr'] = learning_rate
+    log(f"learning_rate: {learning_rate:.6f}")
 
     random.seed(100)
 
@@ -153,7 +157,7 @@ if __name__ == '__main__':
                         else:
                             imgs_sr = test_iter(imgs_lr)
                         
-                        img_lr = imgs_lr[0].numpy()[:,center_frame*3:center_frame*3+3,:,:]
+                        img_lr = imgs_lr[0].numpy()[center_frame*3:center_frame*3+3,:,:]
                         img_sr = imgs_sr[0].numpy()
                         img_hr = imgs_hr[0].numpy()
 

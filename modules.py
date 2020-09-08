@@ -148,7 +148,7 @@ class TSAFusion(nn.Module):
         self.spatial_attn_add1 = nn.Conv2d(nf, nf, 1)
         self.spatial_attn_add2 = nn.Conv2d(nf, nf, 1)
 
-        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+        self.lrelu = nn.LeakyReLU(negative_slope=0.1)
         self.upsample = nn.Upsample(
             scale_factor=2, mode='bilinear', align_corners=False)
 

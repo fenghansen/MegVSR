@@ -18,13 +18,13 @@ if __name__ == '__main__':
     train_steps = 1000
     batch_size = 8
     crop_per_image = 4
-    crop_size = 64
+    crop_size = 48
     nflames = 1
     num_workers = 4
     step_size = 2
-    learning_rate = 1e-4
-    last_epoch = 0
-    stop_epoch = 20
+    learning_rate = 2e-5
+    last_epoch = 20
+    stop_epoch = 30
     save_freq = 1
     plot_freq = 1
     mode = 'train'
@@ -34,9 +34,9 @@ if __name__ == '__main__':
     net = SR_RRDB(nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    # model = torch.load('last_model.pkl')
-    # net.load_state_dict(model['net'])
-    # optimizer.load_state_dict(model['opt'])
+    model = torch.load('last_model.pkl')
+    net.load_state_dict(model['net'])
+    optimizer.load_state_dict(model['opt'])
 
     random.seed(100)
 
@@ -76,7 +76,7 @@ if __name__ == '__main__':
 
         for epoch in range(last_epoch+1, stop_epoch+1):
             for video_id in range(train_dst.num_of_videos):
-                train_dst.video_id = video_id
+                train_dst.next_video(video_id)
 
                 sampler_train = RandomSampler(dataset=train_dst, batch_size=batch_size)
                 sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
@@ -170,7 +170,7 @@ if __name__ == '__main__':
         imgs_bc = torch.tensor(dtype=np.float32)
 
         for video_id in range(90, 90+test_dst.num_of_videos):
-            test_dst.video_id = video_id
+            test_dst.next_video(video_id)
             sampler_test = SequentialSampler(dataset=test_dst, batch_size=6)
             dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
             with tqdm(total=len(test_dst)) as t:

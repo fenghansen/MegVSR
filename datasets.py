@@ -21,6 +21,8 @@ class MegVSR_Dataset(Dataset):
     
     def initialization(self):
         self.sub_dir = 'train_png' if self.mode == 'train' else 'eval_png'
+        if self.sub_dir == 'eval_png' and self.nflames > 1:
+            self.sub_dir = 'eval_video'
         self.data_dir = os.path.join(self.root_dir, self.sub_dir)
         self.video_id = 0
         self.lr_dirs = []
@@ -90,7 +92,7 @@ class MegVSR_Dataset(Dataset):
         hr_crops = np.zeros((self.crop_per_image, self.crop_size*4, self.crop_size*4, c))
 
         # 往空tensor的通道上贴patchs
-        for i in range(crop_per_image):
+        for i in range(self.crop_per_image):
             lr_crop = lr_img[self.h_start:self.h_end, self.w_start:self.w_end, :]
             hr_crop = hr_img[self.h_start*4:self.h_end*4, self.w_start*4:self.w_end*4, :]
 
@@ -131,7 +133,7 @@ class MegVSR_Dataset(Dataset):
             if self.nflames > 1:
                 lr_crops, hr_crops = self.video_crop(lr_img, hr_img)
             else:
-                aug = 'SISR' if nflames == 1 else None
+                aug = 'SISR' if self.nflames == 1 else None
                 lr_crops, hr_crops = random_crop(lr_img, hr_img, aug='SISR',
                         crop_size=self.crop_size, crop_per_image=self.crop_per_image)
         else:
@@ -159,29 +161,32 @@ class MegVSR_Dataset(Dataset):
         return data
 
     def __getitem__(self, idx):
-        r = self.nflames // 2
-        data = None
-        # 首位置，前相邻帧为本帧
-        if idx == 0:
-            data = self.getitem(idx)
-            self.buffer = [data] * (r + 1)
-            for i in range(1, r):
-                data = self.getitem(idx+i)
-                self.buffer.append(data)
-        else:
-            # 其余位置删除最前帧，向末尾添加下一帧
-            del self.buffer[0]
-        
-        # 最后一帧前，末尾都是下一帧
-        if idx != self.frame_paths[self.video_id]['len'] - r:
-            data = self.getitem(idx+r)
-        else:
-            # 最后一帧时，末尾为本帧（上一帧的下一帧）
-            data = self.buffer[-1]
+        if self.nflames > 1:
+            r = self.nflames // 2
+            data = None
+            # 首位置，前相邻帧为本帧
+            if idx == 0:
+                data = self.getitem(idx)
+                self.buffer = [data] * (r + 1)
+                for i in range(1, r):
+                    data = self.getitem(idx+i)
+                    self.buffer.append(data)
+            else:
+                # 其余位置删除最前帧，向末尾添加下一帧
+                del self.buffer[0]
 
-        self.buffer.append(data)
-        
-        return self.buffer_stack_on_channels()
+            # 最后一帧前，末尾都是下一帧
+            if idx != self.frame_paths[self.video_id]['len'] - r:
+                data = self.getitem(idx+r)
+            else:
+                # 最后一帧时，末尾为本帧（上一帧的下一帧）
+                data = self.buffer[-1]
+
+            self.buffer.append(data)
+
+            return self.buffer_stack_on_channels()
+        else:
+            return self.getitem(idx)
 
 
 class MegVSR_Test_Dataset(Dataset):
@@ -270,29 +275,32 @@ class MegVSR_Test_Dataset(Dataset):
         return data
     
     def __getitem__(self, idx):
-        r = self.nflames // 2
-        data = None
-        # 首位置，前相邻帧为本帧
-        if idx == 0:
-            data = self.getitem(idx)
-            self.buffer = [data] * (r + 1)
-            for i in range(1, r):
-                data = self.getitem(idx+i)
-                self.buffer.append(data)
-        else:
-            # 其余位置删除最前帧，向末尾添加下一帧
-            del self.buffer[0]
-        
-        # 最后一帧前，末尾都是下一帧
-        if idx != self.frame_paths[self.video_id]['len'] - r:
-            data = self.getitem(idx+r)
-        else:
-            # 最后一帧时，末尾为本帧（上一帧的下一帧）
-            data = self.buffer[-1]
+        if self.nflames > 1:
+            r = self.nflames // 2
+            data = None
+            # 首位置，前相邻帧为本帧
+            if idx == 0:
+                data = self.getitem(idx)
+                self.buffer = [data] * (r + 1)
+                for i in range(1, r):
+                    data = self.getitem(idx+i)
+                    self.buffer.append(data)
+            else:
+                # 其余位置删除最前帧，向末尾添加下一帧
+                del self.buffer[0]
 
-        self.buffer.append(data)
-        
-        return self.buffer_stack_on_channels()
+            # 最后一帧前，末尾都是下一帧
+            if idx != self.frame_paths[self.video_id]['len'] - r:
+                data = self.getitem(idx+r)
+            else:
+                # 最后一帧时，末尾为本帧（上一帧的下一帧）
+                data = self.buffer[-1]
+
+            self.buffer.append(data)
+
+            return self.buffer_stack_on_channels()
+        else:
+                return self.getitem(idx)
 
 
 def random_crop(lr_img, hr_img, crop_size=32, crop_per_image=8, aug=None):

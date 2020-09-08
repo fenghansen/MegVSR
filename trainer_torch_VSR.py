@@ -12,16 +12,16 @@ from losses import *
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
-    model_name = "RRDB_multi_6"
+    model_name = "VRRDB_6"
     model_dir = "./saved_model"
     sample_dir = "./images/samples"
     test_dir = "./images/test"
     train_steps = 1000
     batch_size = 8
     crop_per_image = 4
-    crop_size = 64
-    nflames = 1
-    num_workers = 4
+    crop_size = 32
+    nflames = 3
+    num_workers = 0
     step_size = 2
     learning_rate = 1e-4
     last_epoch = 0
@@ -32,40 +32,40 @@ if __name__ == '__main__':
     symbolic = True
     cv2_INTER = True
 
-    # tiny
-    # net = RRDBNet(nf=64, nb=3)
-    # normal
-    # net = SRResnet(nb=16)
-    net = SR_RRDB(nb=6)
+    net = VSR_RRDB(in_nc=9,nb=6)
     optimizer = Adam(net.parameters(), lr=learning_rate)
     # load weight
-    model = torch.load('last_model.pth')
-    net.load_state_dict(model['net'])
+    # model = torch.load('last_model.pth')
+    # net.load_state_dict(model['net'])
     # optimizer.load_state_dict(model['opt'])
 
     random.seed(100)
     # 训练
     if mode == 'train':
-        dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
+        train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
                             mode='train', cv2_INTER=cv2_INTER, nflames=nflames)
-        dataloader_train = DataLoader(dst, batch_size=1, shuffle=False, num_workers=0)
+        dataloader_train = DataLoader(train_dst, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-        eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, mode='eval')
-        dataloader_eval = DataLoader(eval_dst, batch_size=batch_size//2, shuffle=False, num_workers=num_workers)
+        eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
+                            mode='eval', cv2_INTER=cv2_INTER, nflames=nflames)
+        dataloader_eval = DataLoader(eval_dst, batch_size=1, shuffle=False, num_workers=num_workers)
 
         scheduler = lr_scheduler.StepLR(optimizer, gamma=0.5, step_size=step_size)
         net = net.to(device)
         net.train()
-        for epoch in range(lastepoch+1, 501):
+        for epoch in range(last_epoch+1, stop_epoch+1):
             for video_id in range(train_dst.num_of_videos):
-                train_dst.video_id = video_id
+                train_dst.next_video(video_id)
                 cnt = 0
                 total_loss = 0
+                cf = nflames//2   # center_frame
+
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         imgs_lr = tensor_dim5to4(data['lr'])
-                        imgs_hr = tensor_dim5to4(data['hr'])
+                        imgs_hr = tensor_dim5to4(data['hr'])[:,cf*3:cf*3+3,:,:]
+                        
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
                         imgs_hr = imgs_hr.type(torch.FloatTensor).to(device)
                         data_load_end = time.time()
@@ -87,6 +87,8 @@ if __name__ == '__main__':
                         t.set_description(f'Epoch {epoch}, Video {video_id}')
                         t.set_postfix(PSNR=float(f"{total_loss/cnt:.6f}"))
                         t.update(1)
+                        break
+                break
                         
             # 更新学习率
             scheduler.step()
@@ -99,13 +101,13 @@ if __name__ == '__main__':
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         frame_id = data['frame_id']
                         imgs_lr = tensor_dim5to4(data['lr'])
-                        imgs_hr = tensor_dim5to4(data['hr'])
+                        imgs_hr = tensor_dim5to4(data['hr'])[:,cf*3:cf*3+3,:,:]
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
                         imgs_hr = imgs_hr.type(torch.FloatTensor).to(device)
                         with torch.no_grad():
                             imgs_sr = net(imgs_lr)
                             imgs_sr = torch.clamp(imgs_sr, 0, 1)
-                            img_lr = imgs_lr[0].detach().cpu().numpy()
+                            img_lr = imgs_lr[0][cf*3:cf*3+3].detach().cpu().numpy()
                             img_sr = imgs_sr[0].detach().cpu().numpy()
                             img_hr = imgs_hr[0].detach().cpu().numpy()
 
@@ -133,7 +135,7 @@ if __name__ == '__main__':
         dataloader_test = DataLoader(test_dst, batch_size=bs_test, shuffle=False, num_workers=2)
         net = net.to(device)
         for video_id in range(90, 90+test_dst.num_of_videos):
-            test_dst.video_id = video_id
+            test_dst.next_video(video_id)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
                     video_id = data['video_id']
