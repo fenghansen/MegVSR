@@ -276,7 +276,7 @@ class MegVSR_Test_Dataset(Dataset):
         r = self.nflames // 2
         temp_buffer = []
         for i in range(idx-r, idx+r+1):
-            id = min(max(i, 0), self.length-1)
+            id = min(max(i, 0), self.__len__()-1)
             if self.buffer[id] is None:
                 self.buffer[id] = self.getitem(id)
             temp_buffer.append(self.getitem(id))

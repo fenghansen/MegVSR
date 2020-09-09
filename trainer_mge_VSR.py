@@ -6,37 +6,40 @@ from functools import lru_cache
 from datasets import *
 from utils import *
 from models import *
+from base_parser import BaseParser
+
 
 if __name__ == '__main__':
+    parser = BaseParser()
+    args = parser.parse()
     device = 'cuda' if torch.is_cuda_available() else 'cpu'
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
-    model_name = "VRRDB_6"
-    model_dir = "./saved_model"
-    sample_dir = f"./images/samples-{model_name}"
+    model_name = args.model_name
+    model_dir = args.checkpoint
+    sample_dir = os.path.join(args.result_dir ,f"samples-{model_name}")
     test_dir = "./images/test"
     os.makedirs(sample_dir, exist_ok=True)
-    train_steps = 1000
-    batch_size = 8
-    crop_per_image = 4
-    crop_size = 32
+    batch_size = args.batch_size
+    crop_per_image = args.crop_per_image
+    crop_size = args.patch_size
     nflames = 3
-    num_workers = 0
-    step_size = 2
-    learning_rate = 1e-4
+    num_workers = args.num_workers
+    step_size = args.step_size
+    learning_rate = args.learning_rate
     last_epoch = 0
     stop_epoch = 20
     save_freq = 1
     plot_freq = 1
-    mode = 'train'
+    mode = args.mode
     symbolic = True
     cv2_INTER = True
 
     net = VSR_RRDB(in_nc=9, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    model = torch.load('last_model.pkl')
+    model = torch.load('RRDB_6.pkl')
     net = load_weights(net, model['net'], by_name=True)
-    optimizer.load_state_dict(model['opt'])
+    # optimizer.load_state_dict(model['opt'])
 
     for g in optimizer.param_groups:
         g['lr'] = learning_rate
@@ -119,6 +122,15 @@ if __name__ == '__main__':
                         t.set_description(f'Epoch {epoch}, Video {video_id}')
                         t.set_postfix(PSNR=float(f"{total_loss/cnt:.6f}"))
                         t.update(1)
+
+                # epoch过程中存储模型
+                if epoch % save_freq == 0:
+                    model_dict = net.module.state_dict() if multi_gpu else net.state_dict()
+                    state = {
+                        'net': model_dict,
+                        'opt': optimizer.state_dict(),
+                    }
+                    torch.save(state, 'last_model.pkl')
             
             # 更新学习率
             learning_rate *= 0.8
@@ -133,7 +145,7 @@ if __name__ == '__main__':
                     'net': model_dict,
                     'opt': optimizer.state_dict(),
                 }
-                save_path = os.path.join(model_dir, 'VRRDB_6.mge.state_e%04d'% ((epoch//10)*10) )
+                save_path = os.path.join(model_dir, '%s.mge.state_e%04d'% (model_name,(epoch//10)*10) )
                 torch.save(state, 'last_model.pkl')
                 torch.save(state, save_path)
 
@@ -172,7 +184,7 @@ if __name__ == '__main__':
                         ssims_bc[k] = ssim[0]
                         ssims_sr[k] = ssim[1]
                         t.set_description(f'Frame {k}')
-                        t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr):.6f}"))
+                        t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr[:k]):.6f}"))
                         t.update(1)
                 
                 log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}")
