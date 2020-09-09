@@ -68,12 +68,23 @@ class MegVSR_Dataset(Dataset):
         self.buffer = []
         # crop corner
         self.get_flame_shape()
-        self.h_start = np.random.randint(0, self.h - self.crop_size)
-        self.w_start = np.random.randint(0, self.w - self.crop_size)
-        self.h_end = self.h_start + self.crop_size
-        self.w_end = self.w_start + self.crop_size 
-        self.aug = 0#np.random.randint(8)
+        self.init_random_crop_point()
     
+    def init_random_crop_point(self):
+        self.h_start = []
+        self.w_start = []
+        self.h_end = []
+        self.w_end = []
+        self.aug = []
+        for i in range(self.crop_per_image):
+            h_start = np.random.randint(0, self.h - self.crop_size)
+            w_start = np.random.randint(0, self.w - self.crop_size)
+            self.h_start.append(h_start)
+            self.w_start.append(w_start)
+            self.h_end.append(h_start + self.crop_size)
+            self.w_end.append(w_start + self.crop_size)
+            self.aug.append(np.random.randint(8))
+
     def get_flame_shape(self):
         video_frame = self.frame_paths[self.video_id]
         lr_img = cv2.imread(video_frame['lr_frames'][0])[:,:,::-1]
@@ -93,11 +104,11 @@ class MegVSR_Dataset(Dataset):
 
         # 往空tensor的通道上贴patchs
         for i in range(self.crop_per_image):
-            lr_crop = lr_img[self.h_start:self.h_end, self.w_start:self.w_end, :]
-            hr_crop = hr_img[self.h_start*4:self.h_end*4, self.w_start*4:self.w_end*4, :]
+            lr_crop = lr_img[self.h_start[i]:self.h_end[i], self.w_start[i]:self.w_end[i], :]
+            hr_crop = hr_img[self.h_start[i]*4:self.h_end[i]*4, self.w_start[i]*4:self.w_end[i]*4, :]
 
-            lr_crop = data_aug(lr_crop, self.aug)
-            hr_crop = data_aug(hr_crop, self.aug)
+            lr_crop = data_aug(lr_crop, self.aug[i])
+            hr_crop = data_aug(hr_crop, self.aug[i])
 
             lr_crops[i:i+1, ...] = lr_crop
             hr_crops[i:i+1, ...] = hr_crop
@@ -160,31 +171,34 @@ class MegVSR_Dataset(Dataset):
 
         return data
 
+    def buffer_read(self, idx):
+        r = self.nflames // 2
+        data = None
+        # 首位置，前相邻帧为本帧
+        if idx == 0:
+            data = self.getitem(idx)
+            self.buffer = [data] * (r + 1)
+            for i in range(1, r):
+                data = self.getitem(idx+i)
+                self.buffer.append(data)
+        else:
+            # 其余位置删除最前帧，向末尾添加下一帧
+            del self.buffer[0]
+
+        # 最后一帧前，末尾都是下一帧
+        if idx != self.frame_paths[self.video_id]['len'] - r:
+            data = self.getitem(idx+r)
+        else:
+            # 最后一帧时，末尾为本帧（上一帧的下一帧）
+            data = self.buffer[-1]
+
+        self.buffer.append(data)
+
+        return self.buffer_stack_on_channels()
+
     def __getitem__(self, idx):
         if self.nflames > 1:
-            r = self.nflames // 2
-            data = None
-            # 首位置，前相邻帧为本帧
-            if idx == 0:
-                data = self.getitem(idx)
-                self.buffer = [data] * (r + 1)
-                for i in range(1, r):
-                    data = self.getitem(idx+i)
-                    self.buffer.append(data)
-            else:
-                # 其余位置删除最前帧，向末尾添加下一帧
-                del self.buffer[0]
-
-            # 最后一帧前，末尾都是下一帧
-            if idx != self.frame_paths[self.video_id]['len'] - r:
-                data = self.getitem(idx+r)
-            else:
-                # 最后一帧时，末尾为本帧（上一帧的下一帧）
-                data = self.buffer[-1]
-
-            self.buffer.append(data)
-
-            return self.buffer_stack_on_channels()
+            return self.buffer_read(idx)
         else:
             return self.getitem(idx)
 
@@ -273,34 +287,37 @@ class MegVSR_Test_Dataset(Dataset):
             data['bc'] = np.ascontiguousarray(bc_crops)
 
         return data
-    
+
+    def buffer_read(self, idx):
+        r = self.nflames // 2
+        data = None
+        # 首位置，前相邻帧为本帧
+        if idx == 0:
+            data = self.getitem(idx)
+            self.buffer = [data] * (r + 1)
+            for i in range(1, r):
+                data = self.getitem(idx+i)
+                self.buffer.append(data)
+        else:
+            # 其余位置删除最前帧，向末尾添加下一帧
+            del self.buffer[0]
+
+        # 最后一帧前，末尾都是下一帧
+        if idx != self.frame_paths[self.video_id]['len'] - r:
+            data = self.getitem(idx+r)
+        else:
+            # 最后一帧时，末尾为本帧（上一帧的下一帧）
+            data = self.buffer[-1]
+
+        self.buffer.append(data)
+
+        return self.buffer_stack_on_channels()
+
     def __getitem__(self, idx):
         if self.nflames > 1:
-            r = self.nflames // 2
-            data = None
-            # 首位置，前相邻帧为本帧
-            if idx == 0:
-                data = self.getitem(idx)
-                self.buffer = [data] * (r + 1)
-                for i in range(1, r):
-                    data = self.getitem(idx+i)
-                    self.buffer.append(data)
-            else:
-                # 其余位置删除最前帧，向末尾添加下一帧
-                del self.buffer[0]
-
-            # 最后一帧前，末尾都是下一帧
-            if idx != self.frame_paths[self.video_id]['len'] - r:
-                data = self.getitem(idx+r)
-            else:
-                # 最后一帧时，末尾为本帧（上一帧的下一帧）
-                data = self.buffer[-1]
-
-            self.buffer.append(data)
-
-            return self.buffer_stack_on_channels()
+            return self.buffer_read(idx)
         else:
-                return self.getitem(idx)
+            return self.getitem(idx)
 
 
 def random_crop(lr_img, hr_img, crop_size=32, crop_per_image=8, aug=None):
@@ -385,7 +402,7 @@ if __name__=='__main__':
                         mode='train',crop_size=100, nflames=nflames)
     # dst = MegVSR_Test_Dataset('F:/datasets/MegVSR/', crop_per_image=crop_per_image, 
                         # mode='train',crop_size=100, nflames=nflames)
-    dataloader_train = DataLoader(dst, batch_size=1, shuffle=False, num_workers=0)
+    dataloader_train = DataLoader(dst, batch_size=1, shuffle=False, num_workers=2)
     for i in range(11,20):
         dst.next_video(i)
         for k, data in enumerate(dataloader_train):
@@ -405,3 +422,4 @@ if __name__=='__main__':
             plt.show()
             plt.close()
             print(len(dataloader_train),len(dst))
+            if k>5: break

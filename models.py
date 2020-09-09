@@ -5,7 +5,10 @@ class VSR_RRDB(nn.Module):
     def __init__(self, in_nc=9, out_nc=3, nf=64, nb=5, gc=32, cv2_INTER=True):
         super().__init__()
         RRDB_block_f = functools.partial(RRDB, nf=nf, gc=gc)
-        self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
+        self.cf = in_nc // 6
+        # PCC alignment module wtih Pyramid, Cascading and Convolution
+        self.PCC = PCCUnet(3, out_channels=nf, nf=nf, nframes=in_nc//3)
+        # self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
         self.RRDB_trunk = make_layer(RRDB_block_f(nf=nf, gc=gc), nb)
         self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         #### upsampling
@@ -23,14 +26,14 @@ class VSR_RRDB(nn.Module):
                 self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
-        fea = self.conv_first(x)
+        fea = self.PCC(x)
         trunk = self.trunk_conv(self.RRDB_trunk(fea))
         fea = fea + trunk
 
         fea = self.upsample(fea)
         out = self.conv_last(self.lrelu(self.HRconv(fea)))
         if self.cv2_INTER is False:
-            imgs_bc = self.bicubic(x)
+            imgs_bc = self.bicubic(x[:,self.cf*3:self.cf*3+3,:,:])
             out = out + imgs_bc
 
         return out
@@ -132,12 +135,12 @@ class RRDBNet(nn.Module):
         
 
 class PCCUnet(nn.Module):
-    def __init__(self, in_channels=9, out_channels=3, nf=32, nframes=3):
+    def __init__(self, in_channels=3, out_channels=3, nf=32, nframes=3):
         super().__init__()
         self.nframes = nframes
         #device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.conv1_1 = nn.Conv2d(in_channels, nf, kernel_size=3, stride=1, padding=1)
-        self.conv1_2 = nn.Conv2d(nf, 32, kernel_size=3, stride=1, padding=1)
+        self.conv1_2 = nn.Conv2d(nf, nf, kernel_size=3, stride=1, padding=1)
         self.pool1 = nn.MaxPool2d(kernel_size=2)
         
         self.conv2_1 = nn.Conv2d(nf, nf*2, kernel_size=3, stride=1, padding=1)
@@ -156,19 +159,19 @@ class PCCUnet(nn.Module):
 
         # 此处承接三路下采样
         self.concat = Concat(dim=1)
-        self.conv4_1 = nn.Conv2d(nf*4*nframes, nf*8, kernel_size=3, stride=1, padding=1)
+        self.conv4_1 = nn.Conv2d(nf*4*self.nframes, nf*8, kernel_size=3, stride=1, padding=1)
         self.conv4_2 = nn.Conv2d(nf*8, nf*4, kernel_size=3, stride=1, padding=1)
 
-        self.upv5 = nn.ConvTranspose2d(nf*8, nf*4, 2, stride=2)
-        self.conv5_1 = nn.Conv2d(nf*4, nf*4, kernel_size=3, stride=1, padding=1)
+        self.upv5 = nn.ConvTranspose2d(nf*4, nf*4, 2, stride=2)
+        self.conv5_1 = nn.Conv2d(nf*8, nf*4, kernel_size=3, stride=1, padding=1)
         self.conv5_2 = nn.Conv2d(nf*4, nf*2, kernel_size=3, stride=1, padding=1)
         
-        self.upv6 = nn.ConvTranspose2d(nf*4, nf*2, 2, stride=2)
-        self.conv6_1 = nn.Conv2d(nf*2, nf*2, kernel_size=3, stride=1, padding=1)
+        self.upv6 = nn.ConvTranspose2d(nf*2, nf*2, 2, stride=2)
+        self.conv6_1 = nn.Conv2d(nf*4, nf*2, kernel_size=3, stride=1, padding=1)
         self.conv6_2 = nn.Conv2d(nf*2, nf, kernel_size=3, stride=1, padding=1)
 
-        self.upv7 = nn.ConvTranspose2d(nf*2, nf, 2, stride=2)
-        self.conv7_1 = nn.Conv2d(nf, nf, kernel_size=3, stride=1, padding=1)
+        self.upv7 = nn.ConvTranspose2d(nf, nf, 2, stride=2)
+        self.conv7_1 = nn.Conv2d(nf*2, nf, kernel_size=3, stride=1, padding=1)
         self.conv7_2 = nn.Conv2d(nf, nf, kernel_size=3, stride=1, padding=1)
 
         self.out = nn.Conv2d(nf, out_channels, kernel_size=1, stride=1)
@@ -202,17 +205,17 @@ class PCCUnet(nn.Module):
         conv4 = self.lrelu(self.conv4_2(conv4))
         
         up5 = self.upv5(conv4)
-        up5 = self.concat([up5, conv3], 1)
+        up5 = self.concat([conv3, up5], 1)
         conv5 = self.lrelu(self.conv5_1(up5))
         conv5 = self.lrelu(self.conv5_2(conv5))
         
         up6 = self.upv6(conv5)
-        up6 = self.concat([up6, conv2], 1)
+        up6 = self.concat([conv2, up6], 1)
         conv6 = self.lrelu(self.conv6_1(up6))
         conv6 = self.lrelu(self.conv6_2(conv6))
         
         up7 = self.upv7(conv6)
-        up7 = self.concat([up7, conv1], 1)
+        up7 = self.concat([conv1, up7], 1)
         conv7 = self.lrelu(self.conv7_1(up7))
         conv7 = self.lrelu(self.conv7_2(conv7))
         

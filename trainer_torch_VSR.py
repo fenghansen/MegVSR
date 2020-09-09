@@ -14,7 +14,7 @@ if __name__ == '__main__':
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
     model_name = "VRRDB_6"
     model_dir = "./saved_model"
-    sample_dir = "./images/samples"
+    sample_dir = "./images/samples-video"
     test_dir = "./images/test"
     train_steps = 1000
     batch_size = 8
@@ -30,9 +30,9 @@ if __name__ == '__main__':
     plot_freq = 1
     mode = 'train'
     symbolic = True
-    cv2_INTER = True
+    cv2_INTER = False
 
-    net = VSR_RRDB(in_nc=9,nb=6)
+    net = VSR_RRDB(in_nc=9,nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
     # load weight
     # model = torch.load('last_model.pth')
@@ -81,14 +81,14 @@ if __name__ == '__main__':
                         with torch.no_grad():
                             pred = torch.clamp(pred, 0, 1)
                             psnr = PSNR_Loss(pred, imgs_hr)
-                        total_loss += psnr.item()
-
-                        cnt += 1
+                        
+                        total_loss = total_loss*0.9 + psnr.item()
+                        cnt = cnt*0.9 + 1
                         t.set_description(f'Epoch {epoch}, Video {video_id}')
                         t.set_postfix(PSNR=float(f"{total_loss/cnt:.6f}"))
                         t.update(1)
                         break
-                break
+                if video_id==0: break
                         
             # 更新学习率
             scheduler.step()

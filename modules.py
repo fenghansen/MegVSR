@@ -207,6 +207,47 @@ class TSAFusion(nn.Module):
         return feat
 
 
+class ChannelAttention(nn.Module):
+    def __init__(self, in_planes, ratio=16):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        self.sharedMLP = nn.Sequential(
+            nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False), nn.ReLU(),
+            nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False))
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avgout = self.sharedMLP(self.avg_pool(x))
+        maxout = self.sharedMLP(self.max_pool(x))
+        return self.sigmoid(avgout + maxout)
+
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=3):
+        super().__init__()
+        self.conv = nn.Conv2d(2,1,kernel_size, padding=1, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avgout = torch.mean(x, dim=1, keepdim=True)
+        maxout, _ = torch.max(x, dim=1, keepdim=True)
+        x = torch.cat([avgout, maxout], dim=1)
+        x = self.conv(x)
+        return self.sigmoid(x)
+
+
+class CBAM(nn.Module):
+    def __init__(self, planes):
+        super().__init__()
+        self.ca = ChannelAttention(planes)
+        self.sa = SpatialAttention()
+    def forward(self, x):
+        x = self.ca(x) * x
+        out = self.sa(x) * x
+        return x
+
 class UpsampleBLock(nn.Module):
     def __init__(self, in_channels, up_scale):
         super(UpsampleBLock, self).__init__()
@@ -266,8 +307,24 @@ class Concat(nn.Module):
         elif self.backend == 'pytorch':
             func_cat = torch.cat
         return func_cat
+    
+    def padding(self, tensors):
+        if len(tensors) > 2: 
+            return tensors
+        x , y = tensors
+        if self.backend == 'megengine':
+            y = tensor(0).reshape(x.size).set_subtensor(y)
+        elif self.backend == 'pytorch':
+            xb, xc, xh, xw = x.size()
+            yb, yc, yh, yw = y.size()
+            diffY = xh - yh
+            diffX = xw - yw
+            y = F.pad(y, (diffX // 2, diffX - diffX//2, 
+                        diffY // 2, diffY - diffY//2))
+        return (x, y)
 
     def forward(self, x, dim=None):
+        x = self.padding(x)
         return self.concat(x, dim if dim is not None else self.dim)
 
 
