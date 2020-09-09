@@ -37,8 +37,7 @@ def log(string, log=None):
             f.write(log_string+'\n')
 
 
-def load_weights(model, path, multi_gpu=False, by_name=False):
-    pretrained_dict=torch.load(path)
+def load_weights(model, pretrained_dict, multi_gpu=False, by_name=False):
     model_dict = model.module.state_dict() if multi_gpu else model.state_dict()
     # 1. filter out unnecessary keys
     pretrained_dict = {k: v for k, v in pretrained_dict.items() 
@@ -80,7 +79,7 @@ def scale_up(img):
     return np.uint8(img * 255.)
 
 def plot_sample(img_lr, img_sr, img_hr, save_path, frame_id, plot_path='./images/samples', 
-                model_name='RRDB', subplots=3, epoch=-1):
+                model_name='RRDB', subplots=3, epoch=-1, print_metrics=False):
     # 变回uint8
     img_lr = scale_up(img_lr.transpose(1,2,0))
     img_sr = scale_up(img_sr.transpose(1,2,0))
@@ -114,13 +113,15 @@ def plot_sample(img_lr, img_sr, img_hr, save_path, frame_id, plot_path='./images
         axes[i].set_title("{} - {} - psnr:{:.2f} - ssim{:.4f}".format(title, img.shape, psnr[i], ssim[i]))
         axes[i].axis('off')
     plt.suptitle('{} - Epoch: {}'.format(filename, epoch))
-    print('PSNR:', psnr)
-    print('SSIM:', ssim)
+    if print_metrics:
+        log('PSNR:', psnr)
+        log('SSIM:', ssim)
     # Save directory
     savefile = os.path.join(save_path, "{}-Epoch{}.png".format(filename, epoch))
     fig.savefig(savefile, bbox_inches='tight')
     plt.close()
     gc.collect()
+    return psnr, ssim
 
 
 def save_picture(img_sr, save_path='./images/test',frame_id='0000'):

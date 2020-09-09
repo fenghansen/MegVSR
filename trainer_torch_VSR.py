@@ -43,8 +43,8 @@ if __name__ == '__main__':
     # 训练
     if mode == 'train':
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                            mode='train', cv2_INTER=cv2_INTER, nflames=nflames)
-        dataloader_train = DataLoader(train_dst, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+                            mode='train', cv2_INTER=cv2_INTER, nflames=nflames, shuffle=True)
+        dataloader_train = DataLoader(train_dst, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
                             mode='eval', cv2_INTER=cv2_INTER, nflames=nflames)
@@ -96,6 +96,11 @@ if __name__ == '__main__':
             # 输出采样
             if epoch % plot_freq == 0:
                 net.eval()
+                psnrs_bc = np.zeros(len(dataloader_eval), dtype=np.float32)
+                ssims_bc = np.zeros(len(dataloader_eval), dtype=np.float32)
+                psnrs_sr = np.zeros(len(dataloader_eval), dtype=np.float32)
+                ssims_sr = np.zeros(len(dataloader_eval), dtype=np.float32)
+
                 with tqdm(total=len(dataloader_eval)) as t:
                     for k, data in enumerate(dataloader_eval):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
@@ -111,11 +116,19 @@ if __name__ == '__main__':
                             img_sr = imgs_sr[0].detach().cpu().numpy()
                             img_hr = imgs_hr[0].detach().cpu().numpy()
 
+                        psnr, ssim = plot_sample(img_lr, img_sr, img_hr, frame_id=frame_id[0], epoch=epoch,
+                                        save_path=sample_dir, plot_path=sample_dir, model_name=model_name)
+                        psnrs_bc[k] = psnr[0]
+                        psnrs_sr[k] = psnr[1]
+                        ssims_bc[k] = ssim[0]
+                        ssims_sr[k] = ssim[1]
                         t.set_description(f'Frame {k}')
+                        t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr[:k]):.6f}"))
                         t.update(1)
-
-                        plot_sample(img_lr, img_sr, img_hr, frame_id=frame_id[0], epoch=epoch,
-                                    save_path=sample_dir, plot_path=sample_dir, model_name='tiny_RRDB')
+                        if k > 10: break
+                
+                log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}")
+                print(f"ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}")
                                     
             # 存储模型
             if epoch % save_freq == 0:

@@ -8,7 +8,7 @@ from utils import *
 
 class MegVSR_Dataset(Dataset):
     def __init__(self, root_dir, crop_size=32, crop_per_image=4, 
-                nflames=3, cv2_INTER=True, mode='train'):
+                nflames=3, cv2_INTER=True, mode='train', shuffle=True):
         super().__init__()
         self.buffer = []
         self.nflames = nflames
@@ -17,6 +17,8 @@ class MegVSR_Dataset(Dataset):
         self.crop_size = crop_size
         self.cv2_INTER = cv2_INTER
         self.mode = mode
+        self.length = 0
+        self.shuffle = shuffle
         self.initialization()
     
     def initialization(self):
@@ -57,15 +59,17 @@ class MegVSR_Dataset(Dataset):
             }
             self.frame_paths.append(video_frames)
         # 初始化完毕
+        self.next_video(0)
         return True
 
     def __len__(self):
-        return self.frame_paths[self.video_id]['len']
+        self.length = self.frame_paths[self.video_id]['len']
+        return self.length
     
     def next_video(self, idx):
         self.video_id = idx
         del self.buffer
-        self.buffer = []
+        self.buffer = [None]*self.__len__() if self.shuffle else []
         # crop corner
         self.get_flame_shape()
         self.init_random_crop_point()
@@ -90,6 +94,7 @@ class MegVSR_Dataset(Dataset):
         lr_img = cv2.imread(video_frame['lr_frames'][0])[:,:,::-1]
         self.h, self.w, self.c = lr_img.shape
     
+    # 按照现有固定的crop_point裁剪video中指定位置的数据
     def video_crop(self, lr_img, hr_img):
         # 本函数用于将numpy随机裁剪成以crop_size为边长的方形crop_per_image等份
         if use_mge:
@@ -114,19 +119,32 @@ class MegVSR_Dataset(Dataset):
             hr_crops[i:i+1, ...] = hr_crop
 
         return lr_crops, hr_crops
+    
+    # 使用单帧的方法+hash获取多帧的数据
+    def multi_frame_crop(self, idx):
+        self.init_random_crop_point()
+        r = self.nflames // 2
+        temp_buffer = []
+        for i in range(idx-r, idx+r+1):
+            id = min(max(i, 0), self.length-1)
+            if self.buffer[id] is None:
+                self.buffer[id] = self.getitem(id)
+            temp_buffer.append(self.getitem(id))
+        return self.buffer_stack_on_channels(temp_buffer)
 
-    def buffer_stack_on_channels(self):
+    # 将nframe帧的buffer中的数据叠成一个tensor形状ndarray
+    def buffer_stack_on_channels(self, buffer=None):
         data = {}
         r = self.nflames // 2
-        data['frame_id'] = self.buffer[r]['frame_id']
-        data['video_id'] = self.buffer[r]['video_id']
-        b, c, h, w = self.buffer[r]['lr'].shape
+        data['frame_id'] = buffer[r]['frame_id']
+        data['video_id'] = buffer[r]['video_id']
+        b, c, h, w = buffer[r]['lr'].shape
         data['lr'] = np.zeros((b, c*self.nflames, h, w))
         data['hr'] = np.zeros((b, c*self.nflames, h*4, w*4))
         if self.cv2_INTER:
             data['bc'] = np.zeros((b, c*self.nflames, h*4, w*4))
 
-        for i, frame in enumerate(self.buffer):
+        for i, frame in enumerate(buffer):
             data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
             data['hr'][:, c*i:c*(i+1), :, :] = frame['hr']
             if self.cv2_INTER:
@@ -134,6 +152,7 @@ class MegVSR_Dataset(Dataset):
         
         return data
 
+    # 获取单帧的一组数据
     def getitem(self, idx):
         data = {}
         video_frame = self.frame_paths[self.video_id]
@@ -145,7 +164,7 @@ class MegVSR_Dataset(Dataset):
                 lr_crops, hr_crops = self.video_crop(lr_img, hr_img)
             else:
                 aug = 'SISR' if self.nflames == 1 else None
-                lr_crops, hr_crops = random_crop(lr_img, hr_img, aug='SISR',
+                lr_crops, hr_crops = random_crop(lr_img, hr_img, aug=aug,
                         crop_size=self.crop_size, crop_per_image=self.crop_per_image)
         else:
             lr_crops = np.expand_dims(lr_img, 0)
@@ -171,7 +190,7 @@ class MegVSR_Dataset(Dataset):
 
         return data
 
-    def buffer_read(self, idx):
+    def liner_buffer(self, idx):
         r = self.nflames // 2
         data = None
         # 首位置，前相邻帧为本帧
@@ -194,20 +213,24 @@ class MegVSR_Dataset(Dataset):
 
         self.buffer.append(data)
 
-        return self.buffer_stack_on_channels()
+        return self.buffer_stack_on_channels(self.buffer)
 
     def __getitem__(self, idx):
         if self.nflames > 1:
-            return self.buffer_read(idx)
+            if self.shuffle:
+                return self.multi_frame_crop(idx)
+            else:
+                return self.liner_buffer(idx)
         else:
             return self.getitem(idx)
 
 
 class MegVSR_Test_Dataset(Dataset):
-    def __init__(self, root_dir, nflames=3, cv2_INTER=True):
+    def __init__(self, root_dir, nflames=3, cv2_INTER=True, shuffle=True):
         super().__init__()
         self.root_dir = root_dir
         self.nflames = nflames
+        self.shuffle = shuffle
         self.cv2_INTER = cv2_INTER
         self.initialization()
     
@@ -245,19 +268,32 @@ class MegVSR_Test_Dataset(Dataset):
     def next_video(self, idx):
         self.video_id = idx
         del self.buffer
-        self.buffer = []
+        self.buffer = [None]*self.__len__() if self.shuffle else []
     
-    def buffer_stack_on_channels(self):
+    # 使用单帧的方法+hash获取多帧的数据
+    def multi_frame_crop(self, idx):
+        self.init_random_crop_point()
+        r = self.nflames // 2
+        temp_buffer = []
+        for i in range(idx-r, idx+r+1):
+            id = min(max(i, 0), self.length-1)
+            if self.buffer[id] is None:
+                self.buffer[id] = self.getitem(id)
+            temp_buffer.append(self.getitem(id))
+        return self.buffer_stack_on_channels(temp_buffer)
+
+    # 将nframe帧的buffer中的数据叠成一个tensor形状ndarray
+    def buffer_stack_on_channels(self, buffer=None):
         data = {}
         r = self.nflames // 2
-        data['frame_id'] = self.buffer[r]['frame_id']
-        data['video_id'] = self.buffer[r]['video_id']
-        b, c, h, w = self.buffer[r]['lr'].shape
+        data['frame_id'] = buffer[r]['frame_id']
+        data['video_id'] = buffer[r]['video_id']
+        b, c, h, w = buffer[r]['lr'].shape
         data['lr'] = np.zeros((b, c*self.nflames, h, w))
         if self.cv2_INTER:
             data['bc'] = np.zeros((b, c*self.nflames, h*4, w*4))
 
-        for i, frame in enumerate(self.buffer):
+        for i, frame in enumerate(buffer):
             data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
             if self.cv2_INTER:
                 data['bc'][:, c*i:c*(i+1), :, :] = frame['bc']
@@ -288,7 +324,7 @@ class MegVSR_Test_Dataset(Dataset):
 
         return data
 
-    def buffer_read(self, idx):
+    def liner_buffer(self, idx):
         r = self.nflames // 2
         data = None
         # 首位置，前相邻帧为本帧
@@ -311,11 +347,14 @@ class MegVSR_Test_Dataset(Dataset):
 
         self.buffer.append(data)
 
-        return self.buffer_stack_on_channels()
+        return self.buffer_stack_on_channels(self.buffer)
 
     def __getitem__(self, idx):
         if self.nflames > 1:
-            return self.buffer_read(idx)
+            if self.shuffle:
+                return self.multi_frame_crop(idx)
+            else:
+                return self.liner_buffer(idx)
         else:
             return self.getitem(idx)
 

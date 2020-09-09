@@ -18,7 +18,7 @@ if __name__ == '__main__':
     train_steps = 1000
     batch_size = 8
     crop_per_image = 4
-    crop_size = 16
+    crop_size = 32
     nflames = 3
     num_workers = 0
     step_size = 2
@@ -31,12 +31,12 @@ if __name__ == '__main__':
     symbolic = True
     cv2_INTER = True
 
-    net = VSR_RRDB(in_nc=9, nf=64, nb=3, cv2_INTER=cv2_INTER)
+    net = VSR_RRDB(in_nc=9, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    # model = torch.load('last_model.pkl')
-    # net.load_state_dict(model['net'])
-    # optimizer.load_state_dict(model['opt'])
+    model = torch.load('last_model.pkl')
+    net = load_weights(net, model['net'], by_name=True)
+    optimizer.load_state_dict(model['opt'])
 
     for g in optimizer.param_groups:
         g['lr'] = learning_rate
@@ -70,7 +70,7 @@ if __name__ == '__main__':
 
     if mode == 'train':
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                                    cv2_INTER=cv2_INTER, nflames=nflames)
+                                    cv2_INTER=cv2_INTER, nflames=nflames, shuffle=True)
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
                                     mode='eval', cv2_INTER=cv2_INTER, nflames=nflames)
 
@@ -85,7 +85,7 @@ if __name__ == '__main__':
                 total_loss = 0
                 cf = nflames//2   # center_frame
 
-                sampler_train = SequentialSampler(dataset=train_dst, batch_size=batch_size)
+                sampler_train = RandomSampler(dataset=train_dst, batch_size=batch_size)
                 sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
 
                 dataloader_train = DataLoader(train_dst, sampler=sampler_train, num_workers=num_workers)
@@ -113,13 +113,12 @@ if __name__ == '__main__':
                         imgs_sr = F.clamp(imgs_sr, 0, 1)
                         psnr = PSNR_Loss(imgs_sr, imgs_hr)
 
-                        total_loss += psnr.item()
-
-                        cnt += 1
+                        total_loss = total_loss*0.9 + psnr.item()
+                        cnt = cnt*0.9 + 1
+                        
                         t.set_description(f'Epoch {epoch}, Video {video_id}')
                         t.set_postfix(PSNR=float(f"{total_loss/cnt:.6f}"))
                         t.update(1)
-                    break
             
             # 更新学习率
             learning_rate *= 0.8
@@ -141,6 +140,11 @@ if __name__ == '__main__':
             # 输出采样
             if epoch % plot_freq == 0:
                 net.eval()
+                psnrs_bc = np.zeros(len(dataloader_eval), dtype=np.float32)
+                ssims_bc = np.zeros(len(dataloader_eval), dtype=np.float32)
+                psnrs_sr = np.zeros(len(dataloader_eval), dtype=np.float32)
+                ssims_sr = np.zeros(len(dataloader_eval), dtype=np.float32)
+                
                 with tqdm(total=len(dataloader_eval)) as t:
                     for k, data in enumerate(dataloader_eval):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
@@ -161,11 +165,18 @@ if __name__ == '__main__':
                         img_sr = imgs_sr[0].numpy()
                         img_hr = imgs_hr[0].numpy()
 
+                        psnr, ssim = plot_sample(img_lr, img_sr, img_hr, frame_id=frame_id[0], epoch=epoch,
+                                        save_path=sample_dir, plot_path=sample_dir, model_name=model_name)
+                        psnrs_bc[k] = psnr[0]
+                        psnrs_sr[k] = psnr[1]
+                        ssims_bc[k] = ssim[0]
+                        ssims_sr[k] = ssim[1]
                         t.set_description(f'Frame {k}')
+                        t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr):.6f}"))
                         t.update(1)
-
-                        plot_sample(img_lr, img_sr, img_hr, frame_id=frame_id[0], epoch=epoch,
-                                    save_path=sample_dir, plot_path=sample_dir, model_name=model_name)
+                
+                log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}")
+                print(f"ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}")
                                     
 
     elif mode == 'test':
