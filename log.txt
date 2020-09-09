@@ -1,0 +1,3 @@
+21:24:25 >>  Epoch 1:
+psnrs_bc=7.02, psnrs_sr=6.82
+ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}

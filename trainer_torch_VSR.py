@@ -62,6 +62,7 @@ if __name__ == '__main__':
 
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):
+                        break
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         imgs_lr = tensor_dim5to4(data['lr'])
                         imgs_hr = tensor_dim5to4(data['hr'])[:,cf*3:cf*3+3,:,:]
@@ -87,7 +88,6 @@ if __name__ == '__main__':
                         t.set_description(f'Epoch {epoch}, Video {video_id}')
                         t.set_postfix(PSNR=float(f"{total_loss/cnt:.6f}"))
                         t.update(1)
-                        break
                 if video_id==0: break
                         
             # 更新学习率
@@ -127,8 +127,8 @@ if __name__ == '__main__':
                         t.update(1)
                         if k > 10: break
                 
-                log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}")
-                print(f"ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}")
+                log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}"
+                    +"\nssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}", log='log.txt')
                                     
             # 存储模型
             if epoch % save_freq == 0:

@@ -7,8 +7,8 @@ class VSR_RRDB(nn.Module):
         RRDB_block_f = functools.partial(RRDB, nf=nf, gc=gc)
         self.cf = in_nc // 6
         # PCC alignment module with Pyramid, Cascading and Convolution
-        # self.PCC = PCCUnet(3, out_channels=nf, nf=nf, nframes=in_nc//3)
-        self.conv_in = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
+        self.PCC = PCCUnet(3, out_channels=nf, nf=nf, nframes=in_nc//3)
+        # self.conv_in = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
         self.RRDB_trunk = make_layer(RRDB_block_f(nf=nf, gc=gc), nb)
         self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         #### upsampling
@@ -26,8 +26,8 @@ class VSR_RRDB(nn.Module):
                 self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
-        # fea = self.PCC(x)
-        fea = self.conv_in(x)
+        fea = self.PCC(x)
+        # fea = self.conv_in(x)
         trunk = self.trunk_conv(self.RRDB_trunk(fea))
         fea = fea + trunk
 

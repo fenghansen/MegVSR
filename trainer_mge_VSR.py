@@ -26,7 +26,7 @@ if __name__ == '__main__':
     num_workers = args.num_workers
     step_size = args.step_size
     learning_rate = args.learning_rate
-    last_epoch = 0
+    last_epoch = 2
     stop_epoch = 20
     save_freq = 1
     plot_freq = 1
@@ -37,9 +37,9 @@ if __name__ == '__main__':
     net = VSR_RRDB(in_nc=9, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    model = torch.load('RRDB_6.pkl')
-    net = load_weights(net, model['net'], by_name=True)
-    # optimizer.load_state_dict(model['opt'])
+    model = torch.load('VRRDB_6.pkl')
+    net = load_weights(net, model['net'])
+    optimizer.load_state_dict(model['opt'])
 
     for g in optimizer.param_groups:
         g['lr'] = learning_rate
@@ -124,7 +124,7 @@ if __name__ == '__main__':
                         t.update(1)
 
                 # epoch过程中存储模型
-                if epoch % save_freq == 0:
+                if epoch % (save_freq*10) == 9:
                     model_dict = net.module.state_dict() if multi_gpu else net.state_dict()
                     state = {
                         'net': model_dict,
@@ -145,7 +145,7 @@ if __name__ == '__main__':
                     'net': model_dict,
                     'opt': optimizer.state_dict(),
                 }
-                save_path = os.path.join(model_dir, '%s.mge.state_e%04d'% (model_name,(epoch//10)*10) )
+                save_path = os.path.join(model_dir, '%s_e%04d.pkl'% (model_name,(epoch//10)*10) )
                 torch.save(state, 'last_model.pkl')
                 torch.save(state, save_path)
 
@@ -187,8 +187,8 @@ if __name__ == '__main__':
                         t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr[:k]):.6f}"))
                         t.update(1)
                 
-                log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}")
-                print(f"ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}")
+                log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}"
+                    +"\nssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}", log='log.txt')
                                     
 
     elif mode == 'test':
