@@ -312,8 +312,9 @@ class Concat(nn.Module):
         if len(tensors) > 2: 
             return tensors
         x , y = tensors
+        print(x.shape)
         if self.backend == 'megengine':
-            y = tensor(0).reshape(x.size).set_subtensor(y)
+            y = torch.tensor(0).reshape(x.shape).set_subtensor(y)
         elif self.backend == 'pytorch':
             xb, xc, xh, xw = x.size()
             yb, yc, yh, yw = y.size()
@@ -324,7 +325,7 @@ class Concat(nn.Module):
         return (x, y)
 
     def forward(self, x, dim=None):
-        x = self.padding(x)
+        # x = self.padding(x)
         return self.concat(x, dim if dim is not None else self.dim)
 
 

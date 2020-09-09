@@ -162,15 +162,15 @@ class PCCUnet(nn.Module):
         self.conv4_1 = nn.Conv2d(nf*4*self.nframes, nf*8, kernel_size=3, stride=1, padding=1)
         self.conv4_2 = nn.Conv2d(nf*8, nf*4, kernel_size=3, stride=1, padding=1)
 
-        self.upv5 = nn.ConvTranspose2d(nf*4, nf*4, 2, stride=2)
+        self.upv5 = nn.ConvTranspose2d(nf*4, nf*4, 4, stride=2, padding=(0,1))
         self.conv5_1 = nn.Conv2d(nf*8, nf*4, kernel_size=3, stride=1, padding=1)
         self.conv5_2 = nn.Conv2d(nf*4, nf*2, kernel_size=3, stride=1, padding=1)
         
-        self.upv6 = nn.ConvTranspose2d(nf*2, nf*2, 2, stride=2)
+        self.upv6 = nn.ConvTranspose2d(nf*2, nf*2, 4, stride=2, padding=(0,1))
         self.conv6_1 = nn.Conv2d(nf*4, nf*2, kernel_size=3, stride=1, padding=1)
         self.conv6_2 = nn.Conv2d(nf*2, nf, kernel_size=3, stride=1, padding=1)
 
-        self.upv7 = nn.ConvTranspose2d(nf, nf, 2, stride=2)
+        self.upv7 = nn.ConvTranspose2d(nf, nf, 4, stride=2, padding=(0,1))
         self.conv7_1 = nn.Conv2d(nf*2, nf, kernel_size=3, stride=1, padding=1)
         self.conv7_2 = nn.Conv2d(nf, nf, kernel_size=3, stride=1, padding=1)
 
@@ -179,7 +179,8 @@ class PCCUnet(nn.Module):
         self.lrelu = nn.LeakyReLU(negative_slope=0.2)
     
     def forward(self, x, mode='test'):
-        frames = x.split(3, dim=1)
+        # frames = x.split(3, dim=1)
+        frames = [x[:,0:3,:,:], x[:,3:6,:,:], x[:,6:9,:,:]]
         cf = self.nframes // 2
 
         # center frame encode
@@ -205,17 +206,17 @@ class PCCUnet(nn.Module):
         conv4 = self.lrelu(self.conv4_2(conv4))
         
         up5 = self.upv5(conv4)
-        up5 = self.concat([conv3, up5], 1)
+        up5 = self.concat([conv3, up5[:,:,:conv3.shape[2],:conv3.shape[3]]], 1)
         conv5 = self.lrelu(self.conv5_1(up5))
         conv5 = self.lrelu(self.conv5_2(conv5))
         
         up6 = self.upv6(conv5)
-        up6 = self.concat([conv2, up6], 1)
+        up6 = self.concat([conv2, up6[:,:,:conv2.shape[2],:conv2.shape[3]]], 1)
         conv6 = self.lrelu(self.conv6_1(up6))
         conv6 = self.lrelu(self.conv6_2(conv6))
         
         up7 = self.upv7(conv6)
-        up7 = self.concat([conv1, up7], 1)
+        up7 = self.concat([conv1, up7[:,:,:conv1.shape[2],:conv1.shape[3]]], 1)
         conv7 = self.lrelu(self.conv7_1(up7))
         conv7 = self.lrelu(self.conv7_2(conv7))
         

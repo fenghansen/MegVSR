@@ -18,7 +18,7 @@ if __name__ == '__main__':
     train_steps = 1000
     batch_size = 8
     crop_per_image = 4
-    crop_size = 32
+    crop_size = 16
     nflames = 3
     num_workers = 0
     step_size = 2
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     symbolic = True
     cv2_INTER = True
 
-    net = VSR_RRDB(in_nc=9, nf=64, nb=6, cv2_INTER=cv2_INTER)
+    net = VSR_RRDB(in_nc=9, nf=64, nb=3, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
     # model = torch.load('last_model.pkl')
@@ -80,7 +80,10 @@ if __name__ == '__main__':
 
         for epoch in range(last_epoch+1, stop_epoch+1):
             for video_id in range(train_dst.num_of_videos):
-                train_dst.video_id = video_id
+                train_dst.next_video(video_id)
+                cnt = 0
+                total_loss = 0
+                cf = nflames//2   # center_frame
 
                 sampler_train = SequentialSampler(dataset=train_dst, batch_size=batch_size)
                 sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
@@ -88,20 +91,16 @@ if __name__ == '__main__':
                 dataloader_train = DataLoader(train_dst, sampler=sampler_train, num_workers=num_workers)
                 dataloader_eval = DataLoader(eval_dst, sampler=sampler_eval, num_workers=num_workers)
 
-                cnt = 0
-                total_loss = 0
-                center_frame = nflames//2
-
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         imgs_lr_np = tensor_dim5to4(data['lr'])
                         imgs_hr_np = tensor_dim5to4(data['hr'])
                         imgs_lr.set_value(imgs_lr_np)
-                        imgs_hr.set_value(imgs_hr_np[:,center_frame*3:center_frame*3+3,:,:])
+                        imgs_hr.set_value(imgs_hr_np[:,cf*3:cf*3+3,:,:])
                         if cv2_INTER:
                             imgs_bc_np = tensor_dim5to4(data['bc'])
-                            imgs_bc.set_value(imgs_bc_np[:,center_frame*3:center_frame*3+3,:,:])
+                            imgs_bc.set_value(imgs_bc_np[:,cf*3:cf*3+3,:,:])
 
                         optimizer.zero_grad()
                         if cv2_INTER:
@@ -120,6 +119,7 @@ if __name__ == '__main__':
                         t.set_description(f'Epoch {epoch}, Video {video_id}')
                         t.set_postfix(PSNR=float(f"{total_loss/cnt:.6f}"))
                         t.update(1)
+                    break
             
             # 更新学习率
             learning_rate *= 0.8
@@ -148,16 +148,16 @@ if __name__ == '__main__':
                         imgs_lr_np = tensor_dim5to4(data['lr'])
                         imgs_hr_np = tensor_dim5to4(data['hr'])
                         imgs_lr.set_value(imgs_lr_np)
-                        imgs_hr.set_value(imgs_hr_np[:,center_frame*3:center_frame*3+3,:,:])
+                        imgs_hr.set_value(imgs_hr_np[:,cf*3:cf*3+3,:,:])
                         
                         if cv2_INTER:
                             imgs_bc_np = tensor_dim5to4(data['bc'])
-                            imgs_bc.set_value(imgs_bc_np[:,center_frame*3:center_frame*3+3,:,:])
+                            imgs_bc.set_value(imgs_bc_np[:,cf*3:cf*3+3,:,:])
                             imgs_sr = test_iter(imgs_lr, imgs_bc)
                         else:
                             imgs_sr = test_iter(imgs_lr)
                         
-                        img_lr = imgs_lr[0].numpy()[center_frame*3:center_frame*3+3,:,:]
+                        img_lr = imgs_lr[0].numpy()[cf*3:cf*3+3,:,:]
                         img_sr = imgs_sr[0].numpy()
                         img_hr = imgs_hr[0].numpy()
 
@@ -174,7 +174,7 @@ if __name__ == '__main__':
         imgs_bc = torch.tensor(dtype=np.float32)
 
         for video_id in range(90, 90+test_dst.num_of_videos):
-            test_dst.video_id = video_id
+            test_dst.next_video(video_id)
             sampler_test = SequentialSampler(dataset=test_dst, batch_size=6)
             dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
             with tqdm(total=len(test_dst)) as t:
