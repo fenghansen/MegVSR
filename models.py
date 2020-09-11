@@ -154,8 +154,9 @@ class PCCUnet(nn.Module):
         self.lrelu = nn.LeakyReLU(negative_slope=0.2)
     
     def forward(self, x, mode='test'):
-        # frames = x.split(3, dim=1)
-        frames = [x[:,0:3,:,:], x[:,3:6,:,:], x[:,6:9,:,:]]
+        frames = []
+        for i in range(self.nframes):
+            frames.append(x[:,i*3:i*3+3,:,:])
         cf = self.nframes // 2
 
         # center frame encode

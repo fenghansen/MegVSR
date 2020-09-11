@@ -6,6 +6,8 @@ from tqdm import tqdm
 from matplotlib import pyplot as plt
 from utils import *
 
+global_buffer = [None] * 1000
+
 class MegVSR_Dataset(Dataset):
     def __init__(self, root_dir, crop_size=32, crop_per_image=4, 
                 nflames=3, cv2_INTER=True, mode='train', shuffle=True):
@@ -23,7 +25,7 @@ class MegVSR_Dataset(Dataset):
     
     def initialization(self):
         self.sub_dir = 'train_png' if self.mode == 'train' else 'eval_png'
-        if self.sub_dir == 'eval_png' and self.nflames > 1:
+        if self.sub_dir == 'eval_png' :#and self.nflames > 1:
             self.sub_dir = 'eval_video'
         self.data_dir = os.path.join(self.root_dir, self.sub_dir)
         self.video_id = 0
@@ -59,6 +61,8 @@ class MegVSR_Dataset(Dataset):
             }
             self.frame_paths.append(video_frames)
         # 初始化完毕
+        if self.shuffle:
+            global global_buffer
         self.next_video(0)
         return True
 
@@ -68,11 +72,14 @@ class MegVSR_Dataset(Dataset):
     
     def next_video(self, idx):
         self.video_id = idx
-        del self.buffer
-        self.buffer = [None]*self.__len__() if self.shuffle else []
+        if self.shuffle:
+            global_buffer = [None] * 1000
+        else:
+            self.buffer = []
         # crop corner
         self.get_flame_shape()
         self.init_random_crop_point()
+        gc.collect()
     
     def init_random_crop_point(self):
         self.h_start = []
@@ -127,8 +134,6 @@ class MegVSR_Dataset(Dataset):
         temp_buffer = []
         for i in range(idx-r, idx+r+1):
             id = min(max(i, 0), self.length-1)
-            if self.buffer[id] is None:
-                self.buffer[id] = self.getitem(id)
             temp_buffer.append(self.getitem(id))
         return self.buffer_stack_on_channels(temp_buffer)
 
@@ -157,8 +162,14 @@ class MegVSR_Dataset(Dataset):
         data = {}
         video_frame = self.frame_paths[self.video_id]
         video_id = video_frame['id']
+        # if global_buffer[idx] is None:
         lr_img = cv2.imread(video_frame['lr_frames'][idx])[:,:,::-1]
         hr_img = cv2.imread(video_frame['hr_frames'][idx])[:,:,::-1]
+        #     global_buffer[idx] = {'lr_img':lr_img, 'hr_img':hr_img}
+        # else:
+        #     lr_img = global_buffer[idx]['lr_img']
+        #     hr_img = global_buffer[idx]['hr_img']
+            
         if self.mode == 'train':
             if self.nflames > 1:
                 lr_crops, hr_crops = self.video_crop(lr_img, hr_img)
@@ -205,7 +216,7 @@ class MegVSR_Dataset(Dataset):
             del self.buffer[0]
 
         # 最后一帧前，末尾都是下一帧
-        if idx != self.frame_paths[self.video_id]['len'] - r:
+        if idx < self.frame_paths[self.video_id]['len'] - r:
             data = self.getitem(idx+r)
         else:
             # 最后一帧时，末尾为本帧（上一帧的下一帧）
@@ -226,9 +237,10 @@ class MegVSR_Dataset(Dataset):
 
 
 class MegVSR_Test_Dataset(Dataset):
-    def __init__(self, root_dir, nflames=3, cv2_INTER=True, shuffle=True):
+    def __init__(self, root_dir, nflames=3, cv2_INTER=True, shuffle=False):
         super().__init__()
         self.root_dir = root_dir
+        self.buffer = []
         self.nflames = nflames
         self.shuffle = shuffle
         self.cv2_INTER = cv2_INTER
@@ -272,13 +284,12 @@ class MegVSR_Test_Dataset(Dataset):
     
     # 使用单帧的方法+hash获取多帧的数据
     def multi_frame_crop(self, idx):
-        self.init_random_crop_point()
         r = self.nflames // 2
         temp_buffer = []
         for i in range(idx-r, idx+r+1):
             id = min(max(i, 0), self.__len__()-1)
-            if self.buffer[id] is None:
-                self.buffer[id] = self.getitem(id)
+            # if self.buffer[id] is None:
+            #     self.buffer[id] = self.getitem(id)
             temp_buffer.append(self.getitem(id))
         return self.buffer_stack_on_channels(temp_buffer)
 
@@ -339,7 +350,7 @@ class MegVSR_Test_Dataset(Dataset):
             del self.buffer[0]
 
         # 最后一帧前，末尾都是下一帧
-        if idx != self.frame_paths[self.video_id]['len'] - r:
+        if idx < self.__len__() - r:
             data = self.getitem(idx+r)
         else:
             # 最后一帧时，末尾为本帧（上一帧的下一帧）

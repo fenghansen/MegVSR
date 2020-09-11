@@ -22,22 +22,23 @@ if __name__ == '__main__':
     batch_size = args.batch_size
     crop_per_image = args.crop_per_image
     crop_size = args.patch_size
-    nflames = 3
+    nflames = args.nframes
+    cf = nflames//2   # center_frame
     num_workers = args.num_workers
     step_size = args.step_size
     learning_rate = args.learning_rate
-    last_epoch = 2
-    stop_epoch = 20
+    last_epoch = args.last_epoch
+    stop_epoch = args.stop_epoch
     save_freq = 1
     plot_freq = 1
     mode = args.mode
     symbolic = True
     cv2_INTER = True
 
-    net = VSR_RRDB(in_nc=9, nf=64, nb=6, cv2_INTER=cv2_INTER)
+    net = VSR_RRDB(in_nc=3*nflames, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    model = torch.load('VRRDB_6.pkl')
+    model = torch.load('VRRDB_5.pkl')
     net = load_weights(net, model['net'])
     optimizer.load_state_dict(model['opt'])
 
@@ -86,7 +87,6 @@ if __name__ == '__main__':
                 train_dst.next_video(video_id)
                 cnt = 0
                 total_loss = 0
-                cf = nflames//2   # center_frame
 
                 sampler_train = RandomSampler(dataset=train_dst, batch_size=batch_size)
                 sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
@@ -184,11 +184,11 @@ if __name__ == '__main__':
                         ssims_bc[k] = ssim[0]
                         ssims_sr[k] = ssim[1]
                         t.set_description(f'Frame {k}')
-                        t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr[:k]):.6f}"))
+                        t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr[:k+1]):.6f}"))
                         t.update(1)
                 
                 log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}"
-                    +"\nssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}", log='log.txt')
+                    +f"\nssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}", log='log.txt')
                                     
 
     elif mode == 'test':
@@ -202,14 +202,14 @@ if __name__ == '__main__':
             dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
-                    video_id = data['video_id']
-                    frame_id = data['frame_id']
+                    video_ids = data['video_id']
+                    frame_ids = data['frame_id']
 
                     imgs_lr_np = tensor_dim5to4(data['lr'])
                     imgs_lr.set_value(imgs_lr_np)
                     if cv2_INTER:
                         imgs_bc_np = tensor_dim5to4(data['bc'])
-                        imgs_bc.set_value(imgs_bc_np)
+                        imgs_bc.set_value(imgs_bc_np[:,cf*3:cf*3+3,:,:])
                         imgs_sr = test_iter(imgs_lr, imgs_bc)
                     else:
                         imgs_sr = test_iter(imgs_lr)
@@ -217,11 +217,11 @@ if __name__ == '__main__':
                     imgs_sr = imgs_sr.numpy()
 
                     for i in range(imgs_sr.shape[0]):
-                        save_dir = os.path.join(test_dir, video_id[i])
-                        # 注意，frame_id是下标，文件名需要+1
-                        save_picture(imgs_sr[i], save_path=save_dir, frame_id="%04d"%(int(frame_id[i])+1))
+                        save_dir = os.path.join(test_dir, video_ids[i])
+                        # 注意，frame_ids是下标，文件名需要+1
+                        save_picture(imgs_sr[i], save_path=save_dir, frame_id="%04d"%(int(frame_ids[i])+1))
 
                         # tqdm update
-                        t.set_description(f'Video {video_id[0]}')
+                        t.set_description(f'Video {video_ids[0]}')
                         t.update(1)
         

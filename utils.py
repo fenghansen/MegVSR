@@ -40,8 +40,13 @@ def log(string, log=None):
 def load_weights(model, pretrained_dict, multi_gpu=False, by_name=False):
     model_dict = model.module.state_dict() if multi_gpu else model.state_dict()
     # 1. filter out unnecessary keys
-    pretrained_dict = {k: v for k, v in pretrained_dict.items() 
-                    if k in model_dict} if by_name else pretrained_dict
+    if by_name:
+        for k, v in pretrained_dict.items():
+            if k in model_dict:
+                if model_dict[k].shape != pretrained_dict[k].shape:
+                    v = np.resize(v, model_dict[k].shape)
+                    log(f'Warning!!!  "{k}":{pretrained_dict[k].shape}->{model_dict[k].shape}')
+                pretrained_dict[k] = v
     # 2. overwrite entries in the existing state dict
     model_dict.update(pretrained_dict)
     if multi_gpu:
@@ -68,7 +73,7 @@ def get_host_with_dir(dataset_name=''):
     elif len(hostname) > 30:
         host = '/home/megstudio/workspace/datasets'
     else:
-        multi_gpu = False
+        multi_gpu = True
         host = '/mnt/lustre/fenghansen/datasets'
     return hostname, host + dataset_name, multi_gpu
 
