@@ -1,5 +1,3 @@
-import os
-import time
 import random
 from functools import lru_cache
 
@@ -82,8 +80,10 @@ if __name__ == '__main__':
         imgs_hr = torch.tensor(dtype=np.float32)
         imgs_bc = torch.tensor(dtype=np.float32)
 
+        video_train_list = list(range(train_dst.num_of_videos))
+        random.shuffle(video_train_list)
         for epoch in range(last_epoch+1, stop_epoch+1):
-            for video_id in range(train_dst.num_of_videos):
+            for video_id in video_train_list:
                 train_dst.next_video(video_id)
                 cnt = 0
                 total_loss = 0
@@ -133,7 +133,7 @@ if __name__ == '__main__':
                     torch.save(state, 'last_model.pkl')
             
             # 更新学习率
-            learning_rate *= 0.8
+            learning_rate *= 0.9
             for g in optimizer.param_groups:
                 g['lr'] = learning_rate
             log(f"learning_rate: {learning_rate:.6f}")
@@ -199,9 +199,10 @@ if __name__ == '__main__':
         for video_id in range(90, 90+test_dst.num_of_videos):
             test_dst.next_video(video_id)
             sampler_test = SequentialSampler(dataset=test_dst, batch_size=6)
-            dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
+            dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=0)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
+                    if video_id < 92: break
                     video_ids = data['video_id']
                     frame_ids = data['frame_id']
 
@@ -215,13 +216,17 @@ if __name__ == '__main__':
                         imgs_sr = test_iter(imgs_lr)
 
                     imgs_sr = imgs_sr.numpy()
-
+                    mp_pool = Pool(num_workers)
                     for i in range(imgs_sr.shape[0]):
                         save_dir = os.path.join(test_dir, video_ids[i])
                         # 注意，frame_ids是下标，文件名需要+1
-                        save_picture(imgs_sr[i], save_path=save_dir, frame_id="%04d"%(int(frame_ids[i])+1))
+                        mp_pool.apply_async(save_picture, args=(imgs_sr[i],), 
+                            kwds={'save_path':save_dir, 'frame_id':"%04d"%(int(frame_ids[i])+1)})
+                        # save_picture(imgs_sr[i], save_path=save_dir, frame_id="%04d"%(int(frame_ids[i])+1))
 
                         # tqdm update
                         t.set_description(f'Video {video_ids[0]}')
                         t.update(1)
+                    mp_pool.close()
+                    mp_pool.join()
         

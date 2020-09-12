@@ -4,6 +4,7 @@ images/
 .vscode/
 *.json
 *.pth
+*.pkl
 *.png
 *.jpg
 

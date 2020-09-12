@@ -27,6 +27,7 @@ import time
 import socket
 from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 from skimage.metrics import structural_similarity as compare_ssim
+from multiprocessing import Pool
 
 
 def log(string, log=None):

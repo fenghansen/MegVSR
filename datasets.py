@@ -286,10 +286,9 @@ class MegVSR_Test_Dataset(Dataset):
     def multi_frame_crop(self, idx):
         r = self.nflames // 2
         temp_buffer = []
+        # mp_pool = Pool(self.nflames)
         for i in range(idx-r, idx+r+1):
             id = min(max(i, 0), self.__len__()-1)
-            # if self.buffer[id] is None:
-            #     self.buffer[id] = self.getitem(id)
             temp_buffer.append(self.getitem(id))
         return self.buffer_stack_on_channels(temp_buffer)
 

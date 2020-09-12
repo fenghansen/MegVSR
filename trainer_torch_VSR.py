@@ -21,14 +21,14 @@ if __name__ == '__main__':
     crop_per_image = 4
     crop_size = 32
     nflames = 3
-    num_workers = 0
+    num_workers = 4
     step_size = 2
     learning_rate = 1e-4
     last_epoch = 0
     stop_epoch = 20
     save_freq = 1
     plot_freq = 1
-    mode = 'train'
+    mode = 'test'
     symbolic = True
     cv2_INTER = False
 
@@ -142,17 +142,19 @@ if __name__ == '__main__':
                 torch.save(state, 'last_model.pth')
     # 输出测试集
     elif mode == 'test':
+        from multiprocessing import Pool
+        mp_pool = Pool(num_workers)
         net.eval()
         bs_test = 4
-        test_dst = MegVSR_Test_Dataset(root_dir)
-        dataloader_test = DataLoader(test_dst, batch_size=bs_test, shuffle=False, num_workers=2)
+        test_dst = MegVSR_Test_Dataset(root_dir, cv2_INTER=False, nflames=nflames, shuffle=True)
+        dataloader_test = DataLoader(test_dst, batch_size=bs_test, shuffle=False, num_workers=0)
         net = net.to(device)
         for video_id in range(90, 90+test_dst.num_of_videos):
             test_dst.next_video(video_id)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
-                    video_id = data['video_id']
-                    frame_id = data['frame_id']
+                    video_ids = data['video_id']
+                    frame_ids = data['frame_id']
                     
                     with torch.no_grad():
                         imgs_lr = tensor_dim5to4(data['lr'])
@@ -162,10 +164,12 @@ if __name__ == '__main__':
                         imgs_sr = imgs_sr.detach().cpu().numpy()
                     
                     for i in range(imgs_sr.shape[0]):
-                        save_dir = os.path.join(test_dir, video_id[i])
-                        # 注意，frame_id是下标，文件名需要+1
-                        save_picture(imgs_sr[i], save_path=save_dir, frame_id="%04d"%(int(frame_id[i])+1))
+                        save_dir = os.path.join(test_dir, video_ids[i])
+                        # 注意，frame_ids是下标，文件名需要+1
+                        mp_pool.apply_async(save_picture, args=(imgs_sr[i],), 
+                            kwds={'save_path':save_dir, 'frame_id':"%04d"%(int(frame_ids[i])+1)})
+                        # save_picture(imgs_sr[i], save_path=save_dir, frame_id="%04d"%(int(frame_ids[i])+1))
 
                         # tqdm update
-                        t.set_description(f'Video {video_id[0]}')
+                        t.set_description(f'Video {video_ids[0]}')
                         t.update(1)
