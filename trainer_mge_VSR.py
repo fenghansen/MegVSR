@@ -85,7 +85,7 @@ if __name__ == '__main__':
         video_train_list = list(range(train_dst.num_of_videos))
         random.shuffle(video_train_list)
         for epoch in range(last_epoch+1, stop_epoch+1):
-            for video_id in video_train_list:
+            for v, video_id in enumerate(video_train_list):
                 train_dst.next_video(video_id)
                 cnt = 0
                 total_loss = 0
@@ -121,7 +121,7 @@ if __name__ == '__main__':
                         total_loss = total_loss*0.9 + psnr.item()
                         cnt = cnt*0.9 + 1
                         
-                        t.set_description(f'Epoch {epoch}, Video {video_id}')
+                        t.set_description(f'Epoch {epoch}, Video {v}')
                         t.set_postfix(PSNR=float(f"{total_loss/cnt:.6f}"))
                         t.update(1)
 
