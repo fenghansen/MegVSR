@@ -1,3 +1,30 @@
 21:24:25 >>  Epoch 1:
 psnrs_bc=7.02, psnrs_sr=6.82
 ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}
+17:52:22 >>  Epoch 1:
+psnrs_bc=17.55, psnrs_sr=18.10
+ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}
+18:48:25 >>  Epoch 2:
+psnrs_bc=17.55, psnrs_sr=18.11
+ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}
+19:43:58 >>  Epoch 3:
+psnrs_bc=17.55, psnrs_sr=18.17
+ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}
+20:39:07 >>  Epoch 4:
+psnrs_bc=17.55, psnrs_sr=18.17
+ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}
+21:34:29 >>  Epoch 5:
+psnrs_bc=17.55, psnrs_sr=18.20
+ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}
+22:30:10 >>  Epoch 6:
+psnrs_bc=17.55, psnrs_sr=18.20
+ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}
+23:25:48 >>  Epoch 7:
+psnrs_bc=17.55, psnrs_sr=18.23
+ssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}
+23:50:02 >>  Epoch 1:
+psnrs_bc=28.49, psnrs_sr=24.32
+ssims_bc=0.8596, ssims_sr=0.7574
+23:51:50 >>  Epoch 2:
+psnrs_bc=28.49, psnrs_sr=24.32
+ssims_bc=0.8596, ssims_sr=0.7574

@@ -14,7 +14,7 @@ except:
     import torch.nn.functional as F
     from torch.utils.data import Dataset, DataLoader
     use_mge = False
-    print('You are Using Pytorch as utils backend...')
+    # print('You are Using Pytorch as utils backend...')
 
 import os
 import glob
@@ -28,6 +28,7 @@ import socket
 from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 from skimage.metrics import structural_similarity as compare_ssim
 from multiprocessing import Pool
+import threading
 
 
 def log(string, log=None):
@@ -42,12 +43,18 @@ def load_weights(model, pretrained_dict, multi_gpu=False, by_name=False):
     model_dict = model.module.state_dict() if multi_gpu else model.state_dict()
     # 1. filter out unnecessary keys
     if by_name:
+        del_list = []
         for k, v in pretrained_dict.items():
             if k in model_dict:
                 if model_dict[k].shape != pretrained_dict[k].shape:
-                    v = np.resize(v, model_dict[k].shape)
+                    del_list.append(k)
+                    # v = np.resize(v, model_dict[k].shape)
                     log(f'Warning!!!  "{k}":{pretrained_dict[k].shape}->{model_dict[k].shape}')
                 pretrained_dict[k] = v
+            else:
+                del_list.append(k)
+        for k in del_list:
+            del pretrained_dict[k]
     # 2. overwrite entries in the existing state dict
     model_dict.update(pretrained_dict)
     if multi_gpu:
@@ -176,5 +183,9 @@ def transform_pth2mge(path):
 if __name__ == '__main__':
     import torch as pytorch
     from models import *
-    transform_pth2mge('last_model.pth')
+    global_buffer = [None] * 10000
+    global_buffer = [np.random.randn(10000,10000)] * 100000
+    global_buffer = [None] * 10000
+    global_buffer = [np.random.randn(10000,10000)] * 100000
+    # transform_pth2mge('last_model.pth')
     # test_output_rename(r'F:/DeepLearning/MegVSR/images/test')

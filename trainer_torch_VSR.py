@@ -12,45 +12,47 @@ from losses import *
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
-    model_name = "VRRDB_6"
+    model_name = "VRRDB_TSA"
     model_dir = "./saved_model"
-    sample_dir = "./images/samples-video"
+    sample_dir = "./images/{model_name}"
     test_dir = "./images/test"
     train_steps = 1000
     batch_size = 8
     crop_per_image = 4
     crop_size = 32
-    nflames = 3
+    nflames = 5
     num_workers = 4
     step_size = 2
-    learning_rate = 1e-4
+    learning_rate = 4e-5
     last_epoch = 0
-    stop_epoch = 20
+    stop_epoch = 30
     save_freq = 1
     plot_freq = 1
-    mode = 'test'
+    mode = 'train'
     symbolic = True
     cv2_INTER = False
 
-    net = VSR_RRDB(in_nc=9,nb=6, cv2_INTER=cv2_INTER)
+    net = VSR_RRDB(in_nc=nflames*3,nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
     # load weight
-    # model = torch.load('last_model.pth')
-    # net.load_state_dict(model['net'])
+    model = torch.load('RRDB6.pth')
+    net = load_weights(net, model['net'], by_name=True)
     # optimizer.load_state_dict(model['opt'])
 
     random.seed(100)
     # 训练
     if mode == 'train':
+        gbuffer_train = Global_Buffer(pool_size=15)
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                            mode='train', cv2_INTER=cv2_INTER, nflames=nflames, shuffle=True)
-        dataloader_train = DataLoader(train_dst, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+                            mode='train', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_train)
+        dataloader_train = DataLoader(train_dst, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
+        gbuffer_eval = Global_Buffer(pool_size=15)
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                            mode='eval', cv2_INTER=cv2_INTER, nflames=nflames)
+                            mode='eval', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_eval)
         dataloader_eval = DataLoader(eval_dst, batch_size=1, shuffle=False, num_workers=num_workers)
 
-        scheduler = lr_scheduler.StepLR(optimizer, gamma=0.5, step_size=step_size)
+        scheduler = lr_scheduler.StepLR(optimizer, gamma=0.8, step_size=step_size)
         net = net.to(device)
         net.train()
         for epoch in range(last_epoch+1, stop_epoch+1):
@@ -62,9 +64,10 @@ if __name__ == '__main__':
 
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):
-                        break
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         imgs_lr = tensor_dim5to4(data['lr'])
+                        imgs_lr = torch.split(imgs_lr, 3, dim=1)
+                        imgs_lr = torch.stack(imgs_lr, dim=1)
                         imgs_hr = tensor_dim5to4(data['hr'])[:,cf*3:cf*3+3,:,:]
                         
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
@@ -88,11 +91,22 @@ if __name__ == '__main__':
                         t.set_description(f'Epoch {epoch}, Video {video_id}')
                         t.set_postfix(PSNR=float(f"{total_loss/cnt:.6f}"))
                         t.update(1)
-                if video_id==0: break
                         
             # 更新学习率
             scheduler.step()
             log(f"learning_rate: {scheduler.get_lr()[0]:.6f}")
+
+            # 存储模型
+            if epoch % save_freq == 0:
+                model_dict = net.module.state_dict() if multi_gpu else net.state_dict()
+                state = {
+                    'net': model_dict,
+                    'opt': optimizer.state_dict(),
+                }
+                save_path = os.path.join(model_dir, '%s_e%04d.pth'% (model_name,(epoch//10)*10) )
+                torch.save(state, 'last_model.pth')
+                torch.save(state, save_path)
+
             # 输出采样
             if epoch % plot_freq == 0:
                 net.eval()
@@ -106,6 +120,8 @@ if __name__ == '__main__':
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         frame_id = data['frame_id']
                         imgs_lr = tensor_dim5to4(data['lr'])
+                        imgs_lr = torch.chunk(imgs_lr, 3, dim=1)
+                        imgs_lr = torch.stack(imgs_lr, dim=1)
                         imgs_hr = tensor_dim5to4(data['hr'])[:,cf*3:cf*3+3,:,:]
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
                         imgs_hr = imgs_hr.type(torch.FloatTensor).to(device)
@@ -123,34 +139,24 @@ if __name__ == '__main__':
                         ssims_bc[k] = ssim[0]
                         ssims_sr[k] = ssim[1]
                         t.set_description(f'Frame {k}')
-                        t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr[:k]):.6f}"))
+                        t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr[:k+1]):.6f}"))
                         t.update(1)
-                        if k > 10: break
                 
                 log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}"
-                    +"\nssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}", log='log.txt')
+                    +f"\nssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}", log='log.txt')
                                     
-            # 存储模型
-            if epoch % save_freq == 0:
-                model_dict = net.module.state_dict() if multi_gpu else net.state_dict()
-                state = {
-                    'net': model_dict,
-                    'opt': optimizer.state_dict(),
-                }
-                save_path = os.path.join(model_dir, 'model.torch.state_e%04d'%((epoch//10) * 10))
-                torch.save(state, save_path)
-                torch.save(state, 'last_model.pth')
     # 输出测试集
     elif mode == 'test':
         from multiprocessing import Pool
         mp_pool = Pool(num_workers)
         net.eval()
         bs_test = 4
-        test_dst = MegVSR_Test_Dataset(root_dir, cv2_INTER=False, nflames=nflames, shuffle=True)
-        dataloader_test = DataLoader(test_dst, batch_size=bs_test, shuffle=False, num_workers=0)
+        gbuffer = Global_Buffer(pool_size=15)
+        test_dst = MegVSR_Test_Dataset(root_dir, cv2_INTER=False, nflames=nflames, shuffle=True, global_buffer=gbuffer)
+        dataloader_test = DataLoader(test_dst, batch_size=bs_test, shuffle=False, num_workers=4)
         net = net.to(device)
         for video_id in range(90, 90+test_dst.num_of_videos):
-            test_dst.next_video(video_id)
+            test_dst.next_video(video_id-90)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
                     video_ids = data['video_id']
@@ -158,6 +164,8 @@ if __name__ == '__main__':
                     
                     with torch.no_grad():
                         imgs_lr = tensor_dim5to4(data['lr'])
+                        imgs_lr = torch.chunk(imgs_lr, 3, dim=1)
+                        imgs_lr = torch.stack(imgs_lr, dim=1)
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
                         imgs_sr = net(imgs_lr)
                         imgs_sr = torch.clamp(imgs_sr, 0, 1)

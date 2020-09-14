@@ -71,10 +71,12 @@ if __name__ == '__main__':
         return -10.0 * F.log(F.mean(F.power(high-low, 2))) / F.log(torch.tensor(10.0))
 
     if mode == 'train':
+        gbuffer_train = Global_Buffer(pool_size=15)
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                                    cv2_INTER=cv2_INTER, nflames=nflames, shuffle=True)
+                            mode='train', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_train)
+        gbuffer_eval = Global_Buffer(pool_size=15)
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                                    mode='eval', cv2_INTER=cv2_INTER, nflames=nflames)
+                            mode='eval', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_eval)
 
         imgs_lr = torch.tensor(dtype=np.float32)
         imgs_hr = torch.tensor(dtype=np.float32)
@@ -192,7 +194,8 @@ if __name__ == '__main__':
                                     
 
     elif mode == 'test':
-        test_dst = MegVSR_Test_Dataset(root_dir, cv2_INTER=cv2_INTER, nflames=nflames)
+        gbuffer = Global_Buffer(pool_size=15)
+        test_dst = MegVSR_Test_Dataset(root_dir, nflames=nflames, shuffle=True, global_buffer=gbuffer)
         imgs_lr = torch.tensor(dtype=np.float32)
         imgs_bc = torch.tensor(dtype=np.float32)
 

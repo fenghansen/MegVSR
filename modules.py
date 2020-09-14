@@ -11,7 +11,7 @@ except:
     import torch.nn as nn
     import torch.nn.functional as F
     use_mge = False
-    print('You are Using Pytorch as Network backend...')
+    # print('You are Using Pytorch as Network backend...')
 
 def make_layer(block, n_layers):
     layers = []
@@ -123,12 +123,13 @@ class TSAFusion(nn.Module):
     Args:
         nf (int): Channel number of middle features. Default: 64.
         nframes (int): Number of frames. Default: 5.
-        center_frame_idx (int): The index of center frame. Default: 2.
+        cf (int): The index of center frame. Default: 2.
     """
 
-    def __init__(self, nf=64, nframes=5, center_frame_idx=2):
+    def __init__(self, nf=32, nframes=5):
         super(TSAFusion, self).__init__()
-        self.center_frame_idx = center_frame_idx
+        self.nframes = nframes
+        self.cf = nframes // 2
         # temporal attention (before fusion conv)
         self.temporal_attn1 = nn.Conv2d(nf, nf, 3, 1, 1)
         self.temporal_attn2 = nn.Conv2d(nf, nf, 3, 1, 1)
@@ -149,8 +150,10 @@ class TSAFusion(nn.Module):
         self.spatial_attn_add2 = nn.Conv2d(nf, nf, 1)
 
         self.lrelu = nn.LeakyReLU(negative_slope=0.1)
-        self.upsample = nn.Upsample(
-            scale_factor=2, mode='bilinear', align_corners=False)
+        if use_mge:
+            self.upsample = Upsample(scale_factor=2, mode='BILINEAR')
+        else:
+            self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
 
     def forward(self, aligned_feat):
         """
@@ -161,9 +164,9 @@ class TSAFusion(nn.Module):
         """
         b, t, c, h, w = aligned_feat.size()
         # temporal attention
-        embedding_ref = self.temporal_attn1(
-            aligned_feat[:, self.center_frame_idx, :, :, :].clone())
+        aligned_cf = aligned_feat[:, self.cf, :, :, :].clone()
         embedding = self.temporal_attn2(aligned_feat.view(-1, c, h, w))
+        embedding_ref = self.temporal_attn1(aligned_cf)
         embedding = embedding.view(b, t, -1, h, w)  # (b, t, c, h, w)
 
         corr_l = []  # correlation list

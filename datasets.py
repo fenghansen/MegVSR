@@ -6,13 +6,46 @@ from tqdm import tqdm
 from matplotlib import pyplot as plt
 from utils import *
 
-global_buffer = [None] * 1000
+class Global_Buffer(Dataset):
+    def __init__(self, pool_size=15, index_range=1000):
+        super().__init__()
+        self.pool_size = pool_size
+        self.index_range = index_range
+        self.buffer = [None] * index_range
+        self.video_frame_paths = None
+        self.start = 0
+        self.end = 0
+        self.check = 0
+    
+    def __len__(self):
+        return len(self.buffer)
+    
+    def video_init(self, video_frame_paths):
+        self.video_frame_paths = video_frame_paths
+        self.buffer = [None] * self.index_range
+    
+    def update(self, idx):
+        self.buffer[idx] = {'lr': cv2.imread(self.video_frame_paths['lr_frames'][idx])[:,:,::-1]}
+        if 'hr_frames' in self.video_frame_paths:
+            self.buffer[idx]['hr'] = cv2.imread(self.video_frame_paths['hr_frames'][idx])[:,:,::-1]
+        self.end = idx
+        while self.end - self.start > self.pool_size:
+            self.buffer[self.start] = None
+            self.start += 1
+    
+    def __getitem__(self, idx):
+        if idx < self.end:
+            return self.buffer[idx]
+        else:
+            self.update(idx)
+            return self.buffer[idx]
 
 class MegVSR_Dataset(Dataset):
-    def __init__(self, root_dir, crop_size=32, crop_per_image=4, 
+    def __init__(self, root_dir, crop_size=32, crop_per_image=4, global_buffer=None, 
                 nflames=3, cv2_INTER=True, mode='train', shuffle=True):
         super().__init__()
         self.buffer = []
+        self.global_buffer = global_buffer
         self.nflames = nflames
         self.root_dir = root_dir
         self.crop_per_image = crop_per_image
@@ -61,8 +94,6 @@ class MegVSR_Dataset(Dataset):
             }
             self.frame_paths.append(video_frames)
         # 初始化完毕
-        if self.shuffle:
-            global global_buffer
         self.next_video(0)
         return True
 
@@ -72,10 +103,8 @@ class MegVSR_Dataset(Dataset):
     
     def next_video(self, idx):
         self.video_id = idx
-        if self.shuffle:
-            global_buffer = [None] * 1000
-        else:
-            self.buffer = []
+        self.global_buffer.video_init(self.frame_paths[idx])
+        self.buffer = []
         # crop corner
         self.get_flame_shape()
         self.init_random_crop_point()
@@ -128,7 +157,7 @@ class MegVSR_Dataset(Dataset):
         return lr_crops, hr_crops
     
     # 使用单帧的方法+hash获取多帧的数据
-    def multi_frame_crop(self, idx):
+    def multiworkers_buffer(self, idx):
         self.init_random_crop_point()
         r = self.nflames // 2
         temp_buffer = []
@@ -162,13 +191,12 @@ class MegVSR_Dataset(Dataset):
         data = {}
         video_frame = self.frame_paths[self.video_id]
         video_id = video_frame['id']
-        # if global_buffer[idx] is None:
-        lr_img = cv2.imread(video_frame['lr_frames'][idx])[:,:,::-1]
-        hr_img = cv2.imread(video_frame['hr_frames'][idx])[:,:,::-1]
-        #     global_buffer[idx] = {'lr_img':lr_img, 'hr_img':hr_img}
-        # else:
-        #     lr_img = global_buffer[idx]['lr_img']
-        #     hr_img = global_buffer[idx]['hr_img']
+        if self.global_buffer is None:
+            lr_img = cv2.imread(video_frame['lr_frames'][idx])[:,:,::-1]
+            hr_img = cv2.imread(video_frame['hr_frames'][idx])[:,:,::-1]
+        else:
+            lr_img = self.global_buffer[idx]['lr']
+            hr_img = self.global_buffer[idx]['hr']
             
         if self.mode == 'train':
             if self.nflames > 1:
@@ -229,7 +257,7 @@ class MegVSR_Dataset(Dataset):
     def __getitem__(self, idx):
         if self.nflames > 1:
             if self.shuffle:
-                return self.multi_frame_crop(idx)
+                return self.multiworkers_buffer(idx)
             else:
                 return self.liner_buffer(idx)
         else:
@@ -237,10 +265,12 @@ class MegVSR_Dataset(Dataset):
 
 
 class MegVSR_Test_Dataset(Dataset):
-    def __init__(self, root_dir, nflames=3, cv2_INTER=True, shuffle=False):
+    def __init__(self, root_dir, nflames=3, cv2_INTER=True, shuffle=False,
+                global_buffer=None):
         super().__init__()
         self.root_dir = root_dir
         self.buffer = []
+        self.global_buffer = global_buffer
         self.nflames = nflames
         self.shuffle = shuffle
         self.cv2_INTER = cv2_INTER
@@ -275,18 +305,18 @@ class MegVSR_Test_Dataset(Dataset):
         return True
 
     def __len__(self):
-        return self.frame_paths[self.video_id-90]['len']
+        return self.frame_paths[self.video_id]['len']
     
     def next_video(self, idx):
         self.video_id = idx
         del self.buffer
-        self.buffer = [None]*self.__len__() if self.shuffle else []
+        self.buffer = []
+        self.global_buffer.video_init(self.frame_paths[idx])
     
     # 使用单帧的方法+hash获取多帧的数据
-    def multi_frame_crop(self, idx):
+    def multiworkers_buffer(self, idx):
         r = self.nflames // 2
         temp_buffer = []
-        # mp_pool = Pool(self.nflames)
         for i in range(idx-r, idx+r+1):
             id = min(max(i, 0), self.__len__()-1)
             temp_buffer.append(self.getitem(id))
@@ -312,9 +342,10 @@ class MegVSR_Test_Dataset(Dataset):
     
     def getitem(self, idx):
         data = {}
-        video_frame = self.frame_paths[self.video_id-90]
+        video_frame = self.frame_paths[self.video_id]
         video_id = video_frame['id']
-        lr_img = cv2.imread(video_frame['lr_frames'][idx])[:,:,::-1]
+        lr_img = self.global_buffer[idx]['lr']
+        # lr_img = cv2.imread(video_frame['lr_frames'][idx])[:,:,::-1]
         lr_crops = np.expand_dims(lr_img, 0)
         if self.cv2_INTER:
             b, h, w, c = lr_crops.shape
@@ -362,7 +393,7 @@ class MegVSR_Test_Dataset(Dataset):
     def __getitem__(self, idx):
         if self.nflames > 1:
             if self.shuffle:
-                return self.multi_frame_crop(idx)
+                return self.multiworkers_buffer(idx)
             else:
                 return self.liner_buffer(idx)
         else:
