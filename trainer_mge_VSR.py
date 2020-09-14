@@ -36,9 +36,9 @@ if __name__ == '__main__':
     net = VSR_RRDB(in_nc=3*nflames, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    model = torch.load('VRRDB_5.pkl')
-    net = load_weights(net, model['net'])
-    optimizer.load_state_dict(model['opt'])
+    model = torch.load('VRRDB_5_32.pkl')
+    net = load_weights(net, model['net'], by_name=True)
+    # optimizer.load_state_dict(model['opt'])
 
     for g in optimizer.param_groups:
         g['lr'] = learning_rate
@@ -90,7 +90,7 @@ if __name__ == '__main__':
                 cnt = 0
                 total_loss = 0
 
-                sampler_train = RandomSampler(dataset=train_dst, batch_size=batch_size)
+                sampler_train = SequentialSampler(dataset=train_dst, batch_size=batch_size)
                 sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
 
                 dataloader_train = DataLoader(train_dst, sampler=sampler_train, num_workers=num_workers)

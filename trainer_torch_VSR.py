@@ -14,14 +14,15 @@ if __name__ == '__main__':
     hostname, root_dir, multi_gpu = get_host_with_dir('/MegVSR')
     model_name = "VRRDB_TSA"
     model_dir = "./saved_model"
-    sample_dir = "./images/{model_name}"
+    sample_dir = f"./images/{model_name}"
+    os.makedirs(sample_dir, exist_ok=True)
     test_dir = "./images/test"
     train_steps = 1000
     batch_size = 8
     crop_per_image = 4
     crop_size = 32
     nflames = 5
-    num_workers = 4
+    num_workers = 8
     step_size = 2
     learning_rate = 4e-5
     last_epoch = 0
@@ -35,7 +36,7 @@ if __name__ == '__main__':
     net = VSR_RRDB(in_nc=nflames*3,nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
     # load weight
-    model = torch.load('RRDB6.pth')
+    model = torch.load('last_model.pth')
     net = load_weights(net, model['net'], by_name=True)
     # optimizer.load_state_dict(model['opt'])
 
@@ -120,7 +121,7 @@ if __name__ == '__main__':
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         frame_id = data['frame_id']
                         imgs_lr = tensor_dim5to4(data['lr'])
-                        imgs_lr = torch.chunk(imgs_lr, 3, dim=1)
+                        imgs_lr = torch.split(imgs_lr, 3, dim=1)
                         imgs_lr = torch.stack(imgs_lr, dim=1)
                         imgs_hr = tensor_dim5to4(data['hr'])[:,cf*3:cf*3+3,:,:]
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
@@ -128,7 +129,7 @@ if __name__ == '__main__':
                         with torch.no_grad():
                             imgs_sr = net(imgs_lr)
                             imgs_sr = torch.clamp(imgs_sr, 0, 1)
-                            img_lr = imgs_lr[0][cf*3:cf*3+3].detach().cpu().numpy()
+                            img_lr = imgs_lr[0][cf].detach().cpu().numpy()
                             img_sr = imgs_sr[0].detach().cpu().numpy()
                             img_hr = imgs_hr[0].detach().cpu().numpy()
 
@@ -164,7 +165,7 @@ if __name__ == '__main__':
                     
                     with torch.no_grad():
                         imgs_lr = tensor_dim5to4(data['lr'])
-                        imgs_lr = torch.chunk(imgs_lr, 3, dim=1)
+                        imgs_lr = torch.split(imgs_lr, 3, dim=1)
                         imgs_lr = torch.stack(imgs_lr, dim=1)
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
                         imgs_sr = net(imgs_lr)

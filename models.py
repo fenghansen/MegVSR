@@ -8,9 +8,10 @@ class VSR_RRDB(nn.Module):
         self.cf = in_nc // 6
         self.nframes = in_nc//3
         # PCC alignment module with Pyramid, Cascading and Convolution
+        self.Unet = Unet(in_nc, out_channels=nf, nf=nf, nframes=self.nframes)
         # self.PCC = PCCUnet(3, out_channels=nf, nf=nf, nframes=self.nframes)
-        self.conv_first = nn.Conv2d(3, nf, 3, 1, 1, bias=True)
-        self.TSA = TSAFusion(nf=nf, nframes=self.nframes)
+        # self.conv_first = nn.Conv2d(3, nf, 3, 1, 1, bias=True)
+        # self.TSA = TSAFusion(nf=nf, nframes=self.nframes)
         self.RRDB_trunk = make_layer(RRDB_block_f(nf=nf, gc=gc), nb)
         self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         #### upsampling
@@ -28,10 +29,11 @@ class VSR_RRDB(nn.Module):
                 self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
-        b,t,c,h,w = x.size()
+        fea = self.Unet(x)
+        # b,t,c,h,w = x.size()
         # fea = self.PCC(x)
-        fea = self.conv_first(x.view(-1,c,h,w)).view(b,t,-1,h,w)
-        fea = self.TSA(fea)
+        # fea = self.conv_first(x.view(-1,c,h,w)).view(b,t,-1,h,w)
+        # fea = self.TSA(fea)
         trunk = self.trunk_conv(self.RRDB_trunk(fea))
         fea = fea + trunk
 
@@ -204,8 +206,80 @@ class PCCUnet(nn.Module):
 
         return out
 
+class Unet(nn.Module):
+    def __init__(self, in_channels=3, out_channels=3, nf=32, nframes=3):
+        super().__init__()
+        self.nframes = nframes
+        #device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.conv1_1 = nn.Conv2d(in_channels, nf, kernel_size=3, stride=1, padding=1)
+        self.conv1_2 = nn.Conv2d(nf, nf, kernel_size=3, stride=1, padding=1)
+        self.pool1 = nn.MaxPool2d(kernel_size=2)
+        
+        self.conv2_1 = nn.Conv2d(nf, nf*2, kernel_size=3, stride=1, padding=1)
+        self.conv2_2 = nn.Conv2d(nf*2, nf*2, kernel_size=3, stride=1, padding=1)
+        self.pool2 = nn.MaxPool2d(kernel_size=2)
+        
+        self.conv3_1 = nn.Conv2d(nf*2, nf*4, kernel_size=3, stride=1, padding=1)
+        self.conv3_2 = nn.Conv2d(nf*4, nf*4, kernel_size=3, stride=1, padding=1)
+        self.pool3 = nn.MaxPool2d(kernel_size=2)
+
+        self.concat = Concat(dim=1)
+        self.conv4_1 = nn.Conv2d(nf*4, nf*8, kernel_size=3, stride=1, padding=1)
+        self.conv4_2 = nn.Conv2d(nf*8, nf*8, kernel_size=3, stride=1, padding=1)
+
+        self.upv5 = nn.ConvTranspose2d(nf*8, nf*4, 4, stride=2, padding=(0,1))
+        self.conv5_1 = nn.Conv2d(nf*8, nf*4, kernel_size=3, stride=1, padding=1)
+        self.conv5_2 = nn.Conv2d(nf*4, nf*2, kernel_size=3, stride=1, padding=1)
+        
+        self.upv6 = nn.ConvTranspose2d(nf*2, nf*2, 4, stride=2, padding=(0,1))
+        self.conv6_1 = nn.Conv2d(nf*4, nf*2, kernel_size=3, stride=1, padding=1)
+        self.conv6_2 = nn.Conv2d(nf*2, nf, kernel_size=3, stride=1, padding=1)
+
+        self.upv7 = nn.ConvTranspose2d(nf, nf, 4, stride=2, padding=(0,1))
+        self.conv7_1 = nn.Conv2d(nf*2, nf, kernel_size=3, stride=1, padding=1)
+        self.conv7_2 = nn.Conv2d(nf, nf, kernel_size=3, stride=1, padding=1)
+
+        self.out = nn.Conv2d(nf, out_channels, kernel_size=1, stride=1)
+
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2)
+    
+    def forward(self, x, mode='test'):
+        # center frame encode
+        conv1 = self.lrelu(self.conv1_1(x))
+        conv1 = self.lrelu(self.conv1_2(conv1))
+        pool1 = self.pool1(conv1)
+        
+        conv2 = self.lrelu(self.conv2_1(pool1))
+        conv2 = self.lrelu(self.conv2_2(conv2))
+        pool2 = self.pool2(conv2)
+        
+        conv3 = self.lrelu(self.conv3_1(pool2))
+        conv3 = self.lrelu(self.conv3_2(conv3))
+        pool3 = self.pool3(conv3)
+        
+        conv4 = self.lrelu(self.conv4_1(pool3))
+        conv4 = self.lrelu(self.conv4_2(conv4))
+        
+        up5 = self.upv5(conv4)
+        up5 = self.concat([conv3, up5[:,:,:conv3.shape[2],:conv3.shape[3]]], 1)
+        conv5 = self.lrelu(self.conv5_1(up5))
+        conv5 = self.lrelu(self.conv5_2(conv5))
+        
+        up6 = self.upv6(conv5)
+        up6 = self.concat([conv2, up6[:,:,:conv2.shape[2],:conv2.shape[3]]], 1)
+        conv6 = self.lrelu(self.conv6_1(up6))
+        conv6 = self.lrelu(self.conv6_2(conv6))
+        
+        up7 = self.upv7(conv6)
+        up7 = self.concat([conv1, up7[:,:,:conv1.shape[2],:conv1.shape[3]]], 1)
+        conv7 = self.lrelu(self.conv7_1(up7))
+        conv7 = self.lrelu(self.conv7_2(conv7))
+        
+        out= self.out(conv7)
+
+        return out
+
 if __name__ == '__main__':
-    SR_RRDBnetwork = RRDBNet()
     SRGAN = SRResnet()
     unet = PCCUnet()
     print('success')

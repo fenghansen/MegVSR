@@ -11,7 +11,7 @@ class BaseParser():
         self.parser.add_argument("--model_name", "-n", default='VRRDB_5', type=str, help="model_name")
         self.parser.add_argument("--result_dir", default='./images/',help="path to result_dir to restore")
         self.parser.add_argument("--step_size", "-s", default=2, type=int, help="step_size")
-        self.parser.add_argument("--batch_size", "-b", default=8, type=int, help="batch_size")
+        self.parser.add_argument("--batch_size", "-b", default=4, type=int, help="batch_size")
         self.parser.add_argument("--patch_size", "-p", default=32, type=int, help="patch_size")
         self.parser.add_argument("--crop_per_image", "-crop", default=4, type=int, help="crop_per_image")
         self.parser.add_argument("--learning_rate", "-lr", default=1e-4, type=float, help="learning_rate")
