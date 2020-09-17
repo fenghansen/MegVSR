@@ -229,8 +229,8 @@ class TSAFusion(nn.Module):
 class ChannelAttention(nn.Module):
     def __init__(self, in_planes, ratio=16):
         super().__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.avg_pool = AdaptiveAvgPool2d() if use_mge else nn.AdaptiveAvgPool2d(1)
+        self.max_pool = AdaptiveMaxPool2d() if use_mge else nn.AdaptiveMaxPool2d(1)
 
         self.sharedMLP = nn.Sequential(
             nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False), nn.ReLU(),
@@ -253,8 +253,8 @@ class SpatialAttention(nn.Module):
         self.max = F.max if use_mge else torch.max
 
     def forward(self, x):
-        avgout = self.mean(x, 1, keepdim=True)
-        maxout, _ = self.max(x, 1, keepdim=True)
+        avgout = self.mean(x, 1, True)
+        maxout = self.max(x, 1, True)
         x = self.concat([avgout, maxout], 1)
         x = self.conv(x)
         return self.sigmoid(x)
