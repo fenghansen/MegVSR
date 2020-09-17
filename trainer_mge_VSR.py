@@ -29,7 +29,7 @@ if __name__ == '__main__':
     stop_epoch = args.stop_epoch
     save_freq = 1
     plot_freq = 1
-    mode = args.mode
+    mode = 'test'#args.mode
     symbolic = True
     cv2_INTER = True
 
@@ -200,12 +200,11 @@ if __name__ == '__main__':
         imgs_bc = torch.tensor(dtype=np.float32)
 
         for video_id in range(90, 90+test_dst.num_of_videos):
-            test_dst.next_video(video_id)
+            test_dst.next_video(video_id-90)
             sampler_test = SequentialSampler(dataset=test_dst, batch_size=6)
             dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=0)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
-                    if video_id < 92: break
                     video_ids = data['video_id']
                     frame_ids = data['frame_id']
 

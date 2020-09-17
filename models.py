@@ -336,21 +336,22 @@ class FusionUnet(nn.Module):
         super().__init__()
         self.nframes = nframes
         #device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.conv1 = ResConvBlock_CBAM(in_channels, nf, nf=nf)
+        self.conv1 = ResConvBlock_CBAM(in_channels,  nf=nf)
         self.pool1 = nn.MaxPool2d(kernel_size=2)
         
-        self.conv2 = ResConvBlock_CBAM(nf, nf*2, nf=nf*2)
+        self.conv2 = ResConvBlock_CBAM(nf, nf=nf*2)
         self.pool2 = nn.MaxPool2d(kernel_size=2)
 
-        self.conv3 = ResConvBlock_CBAM(nf*2, nf*4, nf=nf*4)
+        self.conv3 = ResConvBlock_CBAM(nf*2, nf=nf*4)
         
         self.upv4 = nn.ConvTranspose2d(nf*4, nf*2, 4, stride=2, padding=(0,1))
-        self.conv4 = ResConvBlock_CBAM(nf*4, nf*1, nf=nf*2)
+        self.conv4 = ResConvBlock_CBAM(nf*4, nf=nf*2)
 
-        self.upv5 = nn.ConvTranspose2d(nf, nf, 4, stride=2, padding=(0,1))
-        self.conv5 = ResConvBlock_CBAM(nf*2, out_channels, nf=nf*1)
+        self.upv5 = nn.ConvTranspose2d(nf*2, nf, 4, stride=2, padding=(0,1))
+        self.conv5 = ResConvBlock_CBAM(nf*2, nf=nf*1)
 
-        self.lrelu = nn.LeakyReLU(negative_slope=0.2)
+        self.out = nn.Conv2d(nf, out_channels, kernel_size=1, stride=1)
+        self.concat = Concat()
     
     def forward(self, x, mode='test'):
         conv1 = self.conv1(x)
@@ -369,7 +370,9 @@ class FusionUnet(nn.Module):
         up5 = self.concat([conv1, up5[:,:,:conv1.shape[2],:conv1.shape[3]]], 1)
         conv5 = self.conv5(up5)
 
-        return conv5
+        out = self.out(conv5)
+
+        return out
 
 if __name__ == '__main__':
     SRGAN = SRResnet()

@@ -20,20 +20,18 @@ def make_layer(block, n_layers):
     return nn.Sequential(*layers)
 
 class ResConvBlock_CBAM(nn.Module):
-    def __init__(self, in_nc, out_nc, nf=64, res_scale=1):
+    def __init__(self, in_nc, nf=64, res_scale=1):
         super().__init__()
         self.res_scale = res_scale
         self.conv1 = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
-        self.conv2 = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
-        self.cbam1 = CBAM(nf)
-        self.cbam2 = CBAM(out_nc)
+        self.conv2 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.cbam = CBAM(nf)
         self.lrelu = nn.LeakyReLU()
 
     def forward(self, x):
-        identity = x
-        x = self.res_scale * self.cbam1(self.lrelu(self.conv1(x))) + identity
-        out = self.res_scale * self.cbam2(self.lrelu(self.conv2(x))) + x
-        return identity + out * self.res_scale
+        x = self.lrelu(self.conv1(x))
+        out = self.res_scale * self.cbam(self.lrelu(self.conv2(x))) + x
+        return x + out * self.res_scale
 
 class ResidualBlockNoBN(nn.Module):
     """Residual block without BN.
