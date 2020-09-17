@@ -268,7 +268,7 @@ class CBAM(nn.Module):
     def forward(self, x):
         x = self.ca(x) * x
         out = self.sa(x) * x
-        return x
+        return out
 
 class UpsampleBLock(nn.Module):
     def __init__(self, in_channels, up_scale):

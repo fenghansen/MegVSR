@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import os
-from data_process import get_frames_from_video
+#from data_process import get_frames_from_video
 
 def rgb2gray(img):
     r = img[...,0]*0.299

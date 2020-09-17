@@ -253,27 +253,33 @@ class Unet(nn.Module):
         #device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.conv1_1 = nn.Conv2d(in_channels, nf, kernel_size=3, stride=1, padding=1)
         self.conv1_2 = nn.Conv2d(nf, nf, kernel_size=3, stride=1, padding=1)
+        self.cbam1 = CBAM(nf)
         self.pool1 = nn.MaxPool2d(kernel_size=2)
         
         self.conv2_1 = nn.Conv2d(nf, nf*2, kernel_size=3, stride=1, padding=1)
         self.conv2_2 = nn.Conv2d(nf*2, nf*2, kernel_size=3, stride=1, padding=1)
+        self.cbam2 = CBAM(nf*2)
         self.pool2 = nn.MaxPool2d(kernel_size=2)
         
         self.conv3_1 = nn.Conv2d(nf*2, nf*4, kernel_size=3, stride=1, padding=1)
         self.conv3_2 = nn.Conv2d(nf*4, nf*4, kernel_size=3, stride=1, padding=1)
+        self.cbam3 = CBAM(nf*4)
         self.pool3 = nn.MaxPool2d(kernel_size=2)
 
         self.concat = Concat(dim=1)
         self.conv4_1 = nn.Conv2d(nf*4, nf*8, kernel_size=3, stride=1, padding=1)
         self.conv4_2 = nn.Conv2d(nf*8, nf*8, kernel_size=3, stride=1, padding=1)
+        self.cbam4 = CBAM(nf*8)
 
         self.upv5 = nn.ConvTranspose2d(nf*8, nf*4, 4, stride=2, padding=(0,1))
         self.conv5_1 = nn.Conv2d(nf*8, nf*4, kernel_size=3, stride=1, padding=1)
         self.conv5_2 = nn.Conv2d(nf*4, nf*2, kernel_size=3, stride=1, padding=1)
+        self.cbam5 = CBAM(nf*2)
         
         self.upv6 = nn.ConvTranspose2d(nf*2, nf*2, 4, stride=2, padding=(0,1))
         self.conv6_1 = nn.Conv2d(nf*4, nf*2, kernel_size=3, stride=1, padding=1)
         self.conv6_2 = nn.Conv2d(nf*2, nf, kernel_size=3, stride=1, padding=1)
+        self.cbam6 = CBAM(nf*1)
 
         self.upv7 = nn.ConvTranspose2d(nf, nf, 4, stride=2, padding=(0,1))
         self.conv7_1 = nn.Conv2d(nf*2, nf, kernel_size=3, stride=1, padding=1)
@@ -287,28 +293,34 @@ class Unet(nn.Module):
         # center frame encode
         conv1 = self.lrelu(self.conv1_1(x))
         conv1 = self.lrelu(self.conv1_2(conv1))
+        conv1 = self.cbam1(conv1)
         pool1 = self.pool1(conv1)
         
         conv2 = self.lrelu(self.conv2_1(pool1))
         conv2 = self.lrelu(self.conv2_2(conv2))
+        conv2 = self.cbam2(conv2)
         pool2 = self.pool2(conv2)
         
         conv3 = self.lrelu(self.conv3_1(pool2))
         conv3 = self.lrelu(self.conv3_2(conv3))
+        conv3 = self.cbam3(conv3)
         pool3 = self.pool3(conv3)
         
         conv4 = self.lrelu(self.conv4_1(pool3))
         conv4 = self.lrelu(self.conv4_2(conv4))
+        conv4 = self.cbam4(conv4)
         
         up5 = self.upv5(conv4)
         up5 = self.concat([conv3, up5[:,:,:conv3.shape[2],:conv3.shape[3]]], 1)
         conv5 = self.lrelu(self.conv5_1(up5))
         conv5 = self.lrelu(self.conv5_2(conv5))
+        conv5 = self.cbam5(conv5)
         
         up6 = self.upv6(conv5)
         up6 = self.concat([conv2, up6[:,:,:conv2.shape[2],:conv2.shape[3]]], 1)
         conv6 = self.lrelu(self.conv6_1(up6))
         conv6 = self.lrelu(self.conv6_2(conv6))
+        conv6 = self.cbam6(conv6)
         
         up7 = self.upv7(conv6)
         up7 = self.concat([conv1, up7[:,:,:conv1.shape[2],:conv1.shape[3]]], 1)

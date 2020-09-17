@@ -17,12 +17,12 @@ if __name__ == '__main__':
     sample_dir = os.path.join(args.result_dir ,f"samples-{model_name}")
     test_dir = "./images/test"
     os.makedirs(sample_dir, exist_ok=True)
-    batch_size = args.batch_size
+    batch_size = 1#args.batch_size
     crop_per_image = args.crop_per_image
     crop_size = args.patch_size
     nflames = args.nframes
     cf = nflames//2   # center_frame
-    num_workers = args.num_workers
+    num_workers = 0#args.num_workers
     step_size = args.step_size
     learning_rate = args.learning_rate
     last_epoch = args.last_epoch
