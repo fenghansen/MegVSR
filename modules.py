@@ -19,6 +19,22 @@ def make_layer(block, n_layers):
         layers.append(block)
     return nn.Sequential(*layers)
 
+class ResConvBlock_CBAM(nn.Module):
+    def __init__(self, in_nc, out_nc, nf=64, res_scale=1):
+        super().__init__()
+        self.res_scale = res_scale
+        self.conv1 = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
+        self.conv2 = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
+        self.cbam1 = CBAM(nf)
+        self.cbam2 = CBAM(out_nc)
+        self.lrelu = nn.LeakyReLU()
+
+    def forward(self, x):
+        identity = x
+        x = self.res_scale * self.cbam1(self.lrelu(self.conv1(x))) + identity
+        out = self.res_scale * self.cbam2(self.lrelu(self.conv2(x))) + x
+        return identity + out * self.res_scale
+
 class ResidualBlockNoBN(nn.Module):
     """Residual block without BN.
 
@@ -232,11 +248,14 @@ class SpatialAttention(nn.Module):
         super().__init__()
         self.conv = nn.Conv2d(2,1,kernel_size, padding=1, bias=False)
         self.sigmoid = nn.Sigmoid()
+        self.concat = Concat()
+        self.mean = F.mean if use_mge else torch.mean
+        self.max = F.max if use_mge else torch.max
 
     def forward(self, x):
-        avgout = torch.mean(x, dim=1, keepdim=True)
-        maxout, _ = torch.max(x, dim=1, keepdim=True)
-        x = torch.cat([avgout, maxout], dim=1)
+        avgout = self.mean(x, 1, keepdim=True)
+        maxout, _ = self.max(x, 1, keepdim=True)
+        x = self.concat([avgout, maxout], 1)
         x = self.conv(x)
         return self.sigmoid(x)
 
@@ -331,6 +350,19 @@ class Concat(nn.Module):
         # x = self.padding(x)
         return self.concat(x, dim if dim is not None else self.dim)
 
+class AdaptiveAvgPool2d(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return F.mean(F.mean(x, axis=-2, keepdims=True), axis=-1, keepdims=True)
+
+class AdaptiveMaxPool2d(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return F.max(F.max(x, axis=-2, keepdims=True), axis=-1, keepdims=True)
 
 if __name__ == '__main__':
     RRDBnet = RRDB()

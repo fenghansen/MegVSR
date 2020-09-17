@@ -170,4 +170,51 @@ def custom_datapair_maker():
         f_origin.close()
         f.close()
 
-custom_datapair_maker()
+def get_frames_from_video(id=84):
+    count = 0
+    todo = [todo_list[id]]
+    for tname in tqdm(todo):
+        tinfo = name_info[tname]
+        srcinfo = name_info[tname.replace('_down4x.mp4', '')]
+
+        f_down4x = tar.extractfile(tinfo)    # 下采样版本的视频
+        f_origin = tar.extractfile(srcinfo)  # 原始视频
+
+        container_down4x = av.open(f_down4x)
+        container_origin = av.open(f_origin)
+
+        frames_down4x = container_down4x.decode(video=0)
+        frames_origin = container_origin.decode(video=0)
+
+        fc_down4x = frame_count(container_down4x)
+        fc_origin = frame_count(container_origin)
+        extra = fc_down4x - fc_origin
+        print(tname, extra)
+        
+        # 由于视频编码和 FFmpeg 实现的问题，压缩前后的帧数可能会不等，下采样版本的视频可能数量少几帧。
+        # 这时，您需要注意跳过下采样版本视频缺少的帧数。
+        if extra > 0:
+            for _ in range(extra):
+                next(frames_down4x)
+
+        imgs = []
+        for k, (frame_down4x,
+                frame_origin) in enumerate(zip(frames_down4x, frames_origin)):
+            img_origin = frame_origin.to_rgb().to_ndarray()
+            if img_origin.shape[0] < 256 or img_origin.shape[1] < 256:
+                continue
+                
+            img_down4x = frame_down4x.to_rgb().to_ndarray()
+            imgs.append(img_down4x)
+            count += 1
+
+        container_down4x.close()
+        container_origin.close()
+        f_down4x.close()
+        f_origin.close()
+        return imgs
+
+
+if __name__ == '__main__':
+    imgs = get_frames_from_video(84)
+    print(len(imgs))

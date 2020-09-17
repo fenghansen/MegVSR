@@ -25,6 +25,7 @@ from PIL import Image
 import cv2
 import time
 import socket
+from optflow import *
 from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 from skimage.metrics import structural_similarity as compare_ssim
 from multiprocessing import Pool
@@ -169,16 +170,35 @@ def transform_pth2mge(path):
 
     pretrained_dict = pytorch.load('last_model.pth')['net']
     # 1. filter out unnecessary keys
+    del_list = []
     for k, v in pretrained_dict.items():
         if k in model_dict:
-            pretrained_dict[k] = v.cpu().numpy()
-            if ('bias' in k and 'conv' in k or 'mean' in k or 'var' in k
-                or '0.bias' in k or k=='out.bias'):
-                pretrained_dict[k] = pretrained_dict[k].reshape(1,-1,1,1)
-            print(f"'{k}':{model_dict[k].shape} -> {pretrained_dict[k].shape}")
+            if model_dict[k].shape != pretrained_dict[k].shape:
+                v=v.cpu().numpy()
+                v = np.resize(v, model_dict[k].shape)
+                log(f'Warning!!!  "{k}":{pretrained_dict[k].shape}->{model_dict[k].shape}')
+            pretrained_dict[k] = v
+        else:
+            del_list.append(k)
+    for k in del_list:
+        del pretrained_dict[k]
     # 2. overwrite entries in the existing state dict
     model_dict.update(pretrained_dict)
     net.load_state_dict(model_dict)
+
+
+def compute_optflow(root_dir):
+    files = [os.path.join(root_dir, name) for name in os.listdir(root_dir)]
+    flows = []
+    prvs_img = cv2.imread(files[0])[:,:,::-1]
+    for i, file in enumerate(files[1:]):
+        next_img = cv2.imread(file)[:,:,::-1]
+        flow = calOptflow(prvs_img, next_img)
+        flows.append(flow)
+    flows.append(np.zeros_like(flow))
+    flows = np.array(flows).astype(np.float32)
+    return flows
+
 
 if __name__ == '__main__':
     import torch as pytorch

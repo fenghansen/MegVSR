@@ -1,6 +1,42 @@
 import math
 from modules import *
 
+class SlowFusion_RRDB(nn.Module):
+    def __init__(self, in_nc=9, out_nc=3, nf=64, nb=5, gc=32, cv2_INTER=True):
+        super().__init__()
+        self.cf = in_nc // 6
+        self.nframes = in_nc//3
+        
+        self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        #### upsampling
+        self.upsample = make_layer(UpsampleBLock(nf, 2), 2)
+        self.HRconv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.conv_last = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
+
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2)
+
+        self.cv2_INTER = cv2_INTER
+        if self.cv2_INTER is False:
+            if use_mge:
+                self.bicubic = Upsample(scale_factor=4, mode='BILINEAR')
+            else:
+                self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
+
+    def forward(self, x):
+        fea = self.Unet(x)
+        
+        trunk = self.trunk_conv(self.RRDB_trunk(fea))
+        fea = fea + trunk
+
+        fea = self.upsample(fea)
+        out = self.conv_last(self.lrelu(self.HRconv(fea)))
+        if self.cv2_INTER is False:
+            imgs_bc = self.bicubic(x[:,self.cf,:,:,:])
+            out = out + imgs_bc
+
+        return out
+
+
 class VSR_RRDB(nn.Module):
     def __init__(self, in_nc=9, out_nc=3, nf=64, nb=5, gc=32, cv2_INTER=True):
         super().__init__()
@@ -140,6 +176,8 @@ class PCCUnet(nn.Module):
 
         # 此处承接三路下采样
         self.concat = Concat(dim=1)
+        self.cbam4_1 = CBAM(nf*8)
+        self.cbam4_2 = CBAM(nf*4)
         self.conv4_1 = nn.Conv2d(nf*4*self.nframes, nf*8, kernel_size=3, stride=1, padding=1)
         self.conv4_2 = nn.Conv2d(nf*8, nf*4, kernel_size=3, stride=1, padding=1)
 
@@ -185,7 +223,9 @@ class PCCUnet(nn.Module):
 
         merge = self.concat(features)
         conv4 = self.lrelu(self.conv4_1(merge))
+        conv4 = self.cbam4_1(conv4)
         conv4 = self.lrelu(self.conv4_2(conv4))
+        conv4 = self.cbam4_2(conv4)
         
         up5 = self.upv5(conv4)
         up5 = self.concat([conv3, up5[:,:,:conv3.shape[2],:conv3.shape[3]]], 1)
@@ -278,6 +318,46 @@ class Unet(nn.Module):
         out= self.out(conv7)
 
         return out
+
+class FusionUnet(nn.Module):
+    def __init__(self, in_channels=2, out_channels=3, nf=64, nframes=3):
+        super().__init__()
+        self.nframes = nframes
+        #device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.conv1 = ResConvBlock_CBAM(in_channels, nf, nf=nf)
+        self.pool1 = nn.MaxPool2d(kernel_size=2)
+        
+        self.conv2 = ResConvBlock_CBAM(nf, nf*2, nf=nf*2)
+        self.pool2 = nn.MaxPool2d(kernel_size=2)
+
+        self.conv3 = ResConvBlock_CBAM(nf*2, nf*4, nf=nf*4)
+        
+        self.upv4 = nn.ConvTranspose2d(nf*4, nf*2, 4, stride=2, padding=(0,1))
+        self.conv4 = ResConvBlock_CBAM(nf*4, nf*1, nf=nf*2)
+
+        self.upv5 = nn.ConvTranspose2d(nf, nf, 4, stride=2, padding=(0,1))
+        self.conv5 = ResConvBlock_CBAM(nf*2, out_channels, nf=nf*1)
+
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2)
+    
+    def forward(self, x, mode='test'):
+        conv1 = self.conv1(x)
+        pool1 = self.pool1(conv1)
+        
+        conv2 = self.conv2(pool1)
+        pool2 = self.pool2(conv2)
+        
+        conv3 = self.conv3(pool2)
+        
+        up4 = self.upv4(conv3)
+        up4 = self.concat([conv2, up4[:,:,:conv2.shape[2],:conv2.shape[3]]], 1)
+        conv4 = self.conv4(up4)
+        
+        up5 = self.upv5(conv4)
+        up5 = self.concat([conv1, up5[:,:,:conv1.shape[2],:conv1.shape[3]]], 1)
+        conv5 = self.conv5(up5)
+
+        return conv5
 
 if __name__ == '__main__':
     SRGAN = SRResnet()

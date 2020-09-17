@@ -253,6 +253,9 @@ class MegVSR_Dataset(Dataset):
         self.buffer.append(data)
 
         return self.buffer_stack_on_channels(self.buffer)
+    
+    def bulid_h5datasets():
+        compute_optflow(self.root_dir)
 
     def __getitem__(self, idx):
         if self.nflames > 1:
@@ -398,7 +401,6 @@ class MegVSR_Test_Dataset(Dataset):
                 return self.liner_buffer(idx)
         else:
             return self.getitem(idx)
-
 
 def random_crop(lr_img, hr_img, crop_size=32, crop_per_image=8, aug=None):
     # 本函数用于将numpy随机裁剪成以crop_size为边长的方形crop_per_image等份
