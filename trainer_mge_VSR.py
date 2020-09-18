@@ -77,24 +77,23 @@ if __name__ == '__main__':
         gbuffer_eval = Global_Buffer(pool_size=64)
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
                             mode='eval', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_eval)
+        sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
+        dataloader_eval = DataLoader(eval_dst, sampler=sampler_eval, num_workers=num_workers)
 
         imgs_lr = torch.tensor(dtype=np.float32)
         imgs_hr = torch.tensor(dtype=np.float32)
         imgs_bc = torch.tensor(dtype=np.float32)
 
         video_train_list = list(range(train_dst.num_of_videos))
-        random.shuffle(video_train_list)
         for epoch in range(last_epoch+1, stop_epoch+1):
+            random.shuffle(video_train_list)
             for v, video_id in enumerate(video_train_list):
                 train_dst.next_video(video_id)
                 cnt = 0
                 total_loss = 0
 
                 sampler_train = SequentialSampler(dataset=train_dst, batch_size=batch_size)
-                sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
-
                 dataloader_train = DataLoader(train_dst, sampler=sampler_train, num_workers=num_workers)
-                dataloader_eval = DataLoader(eval_dst, sampler=sampler_eval, num_workers=num_workers)
 
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):

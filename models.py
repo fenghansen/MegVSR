@@ -48,7 +48,7 @@ class SlowFusion_RRDB(nn.Module):
         center_fea = fusion[self.cf]
         
         # Slow Fusion
-        for step in range(self.nb-1):
+        for step in range(self.nframes-1):
             fea = []
             for i in range(self.nframes-step):
                 fea.append(self.RRDB[step](fusion[i]))
