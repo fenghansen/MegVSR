@@ -10,7 +10,7 @@ class SlowFusion_RRDB(nn.Module):
 
         self.conv_first = nn.Conv2d(3, nf, 3, 1, 1, bias=True)
         self.RRDB = [RRDB(nf=nf, gc=gc)] * nb
-        self.FusionUnet = [FusionUnet(nf*2, nf, nf=nf)] * (nb-1)
+        self.FusionUnet = [FusionUnet(nf*2, nf, nf=nf)] * (nframes-1)
         # self.RRDB1 = RRDB(nf=nf, gc=gc)
         # self.FusionUnet1 = FusionUnet(nf*2, nf, nf=nf)
         # self.RRDB2 = RRDB(nf=nf, gc=gc)
@@ -45,22 +45,24 @@ class SlowFusion_RRDB(nn.Module):
         fusion = []
         for i in range(self.nframes):
             fusion.append(self.conv_first(frames[i]))
-        fea = fusion[self.cf]
+        center_fea = fusion[self.cf]
         
         # Slow Fusion
         for step in range(self.nb-1):
             fea = []
             for i in range(self.nframes-step):
-                fea.append(self.RRDB[step](fusion[step]))
+                fea.append(self.RRDB[step](fusion[i]))
             fusion = []
             for i in range(self.nframes-step-1):
                 cat = self.concat((fea[i], fea[i+1]))
                 fusion.append(self.FusionUnet[step](cat))
         # fusion = [Tensor(b,nf,w,h)]
-        RRDB_last = self.RRDB[self.nb-1](fusion[0])
+        RRDB_last = self.RRDB[self.nframes-1](fusion[0])
+        for i in range(self.nb-self.nframes):
+            RRDB_last = self.RRDB[self.nb-i-1](RRDB_last)
 
         trunk = self.trunk_conv(RRDB_last)
-        fea = fea + trunk
+        fea = center_fea + trunk
 
         fea = self.upsample(fea)
         out = self.conv_last(self.lrelu(self.HRconv(fea)))

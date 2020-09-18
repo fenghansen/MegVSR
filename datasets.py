@@ -23,6 +23,8 @@ class Global_Buffer(Dataset):
     def video_init(self, video_frame_paths):
         self.video_frame_paths = video_frame_paths
         self.buffer = [None] * self.index_range
+        self.start = 0
+        self.end = 0
     
     def update(self, idx):
         self.buffer[idx] = {'lr': cv2.imread(self.video_frame_paths['lr_frames'][idx])[:,:,::-1]}

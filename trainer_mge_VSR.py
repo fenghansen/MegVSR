@@ -33,11 +33,11 @@ if __name__ == '__main__':
     symbolic = True
     cv2_INTER = True
 
-    net = VSR_RRDB(in_nc=3*nflames, nf=64, nb=6, cv2_INTER=cv2_INTER)
+    net = SlowFusion_RRDB(in_nc=3*nflames, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    model = torch.load('VRRDB_Unet_e0020.pkl')
-    net = load_weights(net, model['net'], by_name=True)
+    # model = torch.load('VRRDB_Unet_e0020.pkl')
+    # net = load_weights(net, model['net'], by_name=True)
     # optimizer.load_state_dict(model['opt'])
 
     for g in optimizer.param_groups:
@@ -71,10 +71,10 @@ if __name__ == '__main__':
         return -10.0 * F.log(F.mean(F.power(high-low, 2))) / F.log(torch.tensor(10.0))
 
     if mode == 'train':
-        gbuffer_train = Global_Buffer(pool_size=15)
+        gbuffer_train = Global_Buffer(pool_size=64)
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
                             mode='train', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_train)
-        gbuffer_eval = Global_Buffer(pool_size=15)
+        gbuffer_eval = Global_Buffer(pool_size=64)
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
                             mode='eval', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_eval)
 
@@ -194,15 +194,15 @@ if __name__ == '__main__':
                                     
 
     elif mode == 'test':
-        gbuffer = Global_Buffer(pool_size=15)
+        gbuffer = Global_Buffer(pool_size=40)
         test_dst = MegVSR_Test_Dataset(root_dir, nflames=nflames, shuffle=True, global_buffer=gbuffer)
         imgs_lr = torch.tensor(dtype=np.float32)
         imgs_bc = torch.tensor(dtype=np.float32)
 
         for video_id in range(90, 90+test_dst.num_of_videos):
             test_dst.next_video(video_id-90)
-            sampler_test = SequentialSampler(dataset=test_dst, batch_size=6)
-            dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=0)
+            sampler_test = SequentialSampler(dataset=test_dst, batch_size=batch_size)
+            dataloader_test = DataLoader(test_dst, sampler=sampler_test, num_workers=num_workers)
             with tqdm(total=len(test_dst)) as t:
                 for k, data in enumerate(dataloader_test):
                     video_ids = data['video_id']
