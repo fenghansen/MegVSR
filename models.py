@@ -10,7 +10,7 @@ class SlowFusion_RRDB(nn.Module):
 
         self.conv_first = nn.Conv2d(3, nf, 3, 1, 1, bias=True)
         self.RRDB = [RRDB(nf=nf, gc=gc)] * nb
-        self.FusionUnet = [FusionUnet(nf*2, nf, nf=nf)] * (nframes-1)
+        self.FusionUnet = [FusionUnet(nf*2, nf, nf=nf)] * (self.nframes-1)
         # self.RRDB1 = RRDB(nf=nf, gc=gc)
         # self.FusionUnet1 = FusionUnet(nf*2, nf, nf=nf)
         # self.RRDB2 = RRDB(nf=nf, gc=gc)
