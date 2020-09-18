@@ -22,7 +22,7 @@ if __name__ == '__main__':
     crop_per_image = 4
     crop_size = 32
     nflames = 5
-    num_workers = 8
+    num_workers = 0
     step_size = 2
     learning_rate = 4e-5
     last_epoch = 0
@@ -33,11 +33,11 @@ if __name__ == '__main__':
     symbolic = True
     cv2_INTER = False
 
-    net = VSR_RRDB(in_nc=nflames*3,nb=6, cv2_INTER=cv2_INTER)
+    net = SlowFusion_RRDB(in_nc=nflames*3,nb=5, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
     # load weight
-    model = torch.load('last_model.pth')
-    net = load_weights(net, model['net'], by_name=True)
+    # model = torch.load('last_model.pth')
+    # net = load_weights(net, model['net'], by_name=True)
     # optimizer.load_state_dict(model['opt'])
 
     random.seed(100)
@@ -67,8 +67,8 @@ if __name__ == '__main__':
                     for k, data in enumerate(dataloader_train):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         imgs_lr = tensor_dim5to4(data['lr'])
-                        imgs_lr = torch.split(imgs_lr, 3, dim=1)
-                        imgs_lr = torch.stack(imgs_lr, dim=1)
+                        # imgs_lr = torch.split(imgs_lr, 3, dim=1)
+                        # imgs_lr = torch.stack(imgs_lr, dim=1)
                         imgs_hr = tensor_dim5to4(data['hr'])[:,cf*3:cf*3+3,:,:]
                         
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
@@ -121,8 +121,8 @@ if __name__ == '__main__':
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
                         frame_id = data['frame_id']
                         imgs_lr = tensor_dim5to4(data['lr'])
-                        imgs_lr = torch.split(imgs_lr, 3, dim=1)
-                        imgs_lr = torch.stack(imgs_lr, dim=1)
+                        # imgs_lr = torch.split(imgs_lr, 3, dim=1)
+                        # imgs_lr = torch.stack(imgs_lr, dim=1)
                         imgs_hr = tensor_dim5to4(data['hr'])[:,cf*3:cf*3+3,:,:]
                         imgs_lr = imgs_lr.type(torch.FloatTensor).to(device)
                         imgs_hr = imgs_hr.type(torch.FloatTensor).to(device)

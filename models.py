@@ -4,8 +4,22 @@ from modules import *
 class SlowFusion_RRDB(nn.Module):
     def __init__(self, in_nc=9, out_nc=3, nf=64, nb=5, gc=32, cv2_INTER=True):
         super().__init__()
+        self.nb = nb
         self.cf = in_nc // 6
         self.nframes = in_nc//3
+
+        self.conv_first = nn.Conv2d(3, nf, 3, 1, 1, bias=True)
+        self.RRDB = [RRDB(nf=nf, gc=gc)] * nb
+        self.FusionUnet = [FusionUnet(nf*2, nf, nf=nf)] * (nb-1)
+        # self.RRDB1 = RRDB(nf=nf, gc=gc)
+        # self.FusionUnet1 = FusionUnet(nf*2, nf, nf=nf)
+        # self.RRDB2 = RRDB(nf=nf, gc=gc)
+        # self.FusionUnet2 = FusionUnet(nf*2, nf, nf=nf)
+        # self.RRDB3 = RRDB(nf=nf, gc=gc)
+        # self.FusionUnet3 = FusionUnet(nf*2, nf, nf=nf)
+        # self.RRDB4 = RRDB(nf=nf, gc=gc)
+        # self.FusionUnet4 = FusionUnet(nf*2, nf, nf=nf)
+        # self.RRDB5 = RRDB(nf=nf, gc=gc)
         
         self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
         #### upsampling
@@ -15,6 +29,7 @@ class SlowFusion_RRDB(nn.Module):
 
         self.lrelu = nn.LeakyReLU(negative_slope=0.2)
 
+        self.concat = Concat()
         self.cv2_INTER = cv2_INTER
         if self.cv2_INTER is False:
             if use_mge:
@@ -23,9 +38,28 @@ class SlowFusion_RRDB(nn.Module):
                 self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
-        fea = self.Unet(x)
+        frames = []
+        for i in range(self.nframes):
+            frames.append(x[:,i*3:i*3+3,:,:])
+        # fisrt conv
+        fusion = []
+        for i in range(self.nframes):
+            fusion.append(self.conv_first(frames[i]))
+        fea = fusion[self.cf]
         
-        trunk = self.trunk_conv(self.RRDB_trunk(fea))
+        # Slow Fusion
+        for step in range(self.nb-1):
+            fea = []
+            for i in range(self.nframes-step):
+                fea.append(self.RRDB[step](fusion[step]))
+            fusion = []
+            for i in range(self.nframes-step-1):
+                cat = self.concat((fea[i], fea[i+1]))
+                fusion.append(self.FusionUnet[step](cat))
+        # fusion = [Tensor(b,nf,w,h)]
+        RRDB_last = self.RRDB[self.nb-1](fusion[0])
+
+        trunk = self.trunk_conv(RRDB_last)
         fea = fea + trunk
 
         fea = self.upsample(fea)
@@ -44,7 +78,7 @@ class VSR_RRDB(nn.Module):
         self.cf = in_nc // 6
         self.nframes = in_nc//3
         # PCC alignment module with Pyramid, Cascading and Convolution
-        self.Unet = Unet(in_nc, out_channels=nf, nf=nf, nframes=self.nframes)
+        self.Unet = Unet(in_nc, out_channels=nf, nf=nf)
         # self.PCC = PCCUnet(3, out_channels=nf, nf=nf, nframes=self.nframes)
         # self.conv_first = nn.Conv2d(3, nf, 3, 1, 1, bias=True)
         # self.TSA = TSAFusion(nf=nf, nframes=self.nframes)
@@ -332,9 +366,8 @@ class Unet(nn.Module):
         return out
 
 class FusionUnet(nn.Module):
-    def __init__(self, in_channels=2, out_channels=3, nf=64, nframes=3):
+    def __init__(self, in_channels=2, out_channels=3, nf=64, **kwargs):
         super().__init__()
-        self.nframes = nframes
         #device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.conv1 = ResConvBlock_CBAM(in_channels,  nf=nf)
         self.pool1 = nn.MaxPool2d(kernel_size=2)

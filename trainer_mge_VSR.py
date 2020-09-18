@@ -17,26 +17,26 @@ if __name__ == '__main__':
     sample_dir = os.path.join(args.result_dir ,f"samples-{model_name}")
     test_dir = "./images/test"
     os.makedirs(sample_dir, exist_ok=True)
-    batch_size = 1#args.batch_size
+    batch_size = args.batch_size
     crop_per_image = args.crop_per_image
     crop_size = args.patch_size
     nflames = args.nframes
     cf = nflames//2   # center_frame
-    num_workers = 0#args.num_workers
+    num_workers = args.num_workers
     step_size = args.step_size
     learning_rate = args.learning_rate
     last_epoch = args.last_epoch
     stop_epoch = args.stop_epoch
     save_freq = 1
     plot_freq = 1
-    mode = 'test'#args.mode
+    mode = args.mode
     symbolic = True
     cv2_INTER = True
 
     net = VSR_RRDB(in_nc=3*nflames, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    model = torch.load('VRRDB_5_32.pkl')
+    model = torch.load('VRRDB_Unet_e0020.pkl')
     net = load_weights(net, model['net'], by_name=True)
     # optimizer.load_state_dict(model['opt'])
 
