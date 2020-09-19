@@ -32,19 +32,18 @@ if __name__ == '__main__':
     mode = args.mode
     symbolic = True
     cv2_INTER = True
+    psnr_best = 29.80
 
     net = SlowFusion_RRDB(in_nc=3*nflames, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
-    # model = torch.load('VRRDB_Unet_e0020.pkl')
-    # net = load_weights(net, model['net'], by_name=True)
-    # optimizer.load_state_dict(model['opt'])
+    model = torch.load('last_model.pkl')
+    net = load_weights(net, model['net'], by_name=True)
+    optimizer.load_state_dict(model['opt'])
 
     for g in optimizer.param_groups:
         g['lr'] = learning_rate
     log(f"learning_rate: {learning_rate:.6f}")
-
-    random.seed(100)
 
     @trace(symbolic=symbolic)
     def train_iter(imgs_lr, imgs_hr, imgs_bc=None):
@@ -188,8 +187,16 @@ if __name__ == '__main__':
                         t.set_postfix(PSNR=float(f"{np.mean(psnrs_sr[:k+1]):.6f}"))
                         t.update(1)
                 
-                log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.2f}, psnrs_sr={np.mean(psnrs_sr):.2f}"
+                log(f"Epoch {epoch}:\npsnrs_bc={np.mean(psnrs_bc):.3f}, psnrs_sr={np.mean(psnrs_sr):.3f}"
                     +f"\nssims_bc={np.mean(ssims_bc):.4f}, ssims_sr={np.mean(ssims_sr):.4f}", log='log.txt')
+                if np.mean(psnrs_sr) > psnr_best:
+                    psnr_best = np.mean(psnrs_sr)
+                    model_dict = net.module.state_dict() if multi_gpu else net.state_dict()
+                    state = {
+                        'net': model_dict,
+                        'opt': optimizer.state_dict(),
+                    }
+                    torch.save(state, 'best_model.pkl')
                                     
 
     elif mode == 'test':
