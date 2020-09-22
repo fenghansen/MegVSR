@@ -20,8 +20,8 @@ if __name__ == '__main__':
     batch_size = args.batch_size
     crop_per_image = args.crop_per_image
     crop_size = args.patch_size
-    nflames = args.nframes
-    cf = nflames//2   # center_frame
+    nframes = args.nframes
+    cf = nframes//2   # center_frame
     num_workers = args.num_workers
     step_size = args.step_size
     learning_rate = args.learning_rate
@@ -34,7 +34,7 @@ if __name__ == '__main__':
     cv2_INTER = True
     psnr_best = 29.80
 
-    net = SlowFusion_RRDB(in_nc=3*nflames, nf=64, nb=6, cv2_INTER=cv2_INTER)
+    net = SlowFusion_RRDB(in_nc=3*nframes, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
     model = torch.load('last_model.pkl')
@@ -72,10 +72,10 @@ if __name__ == '__main__':
     if mode == 'train':
         gbuffer_train = Global_Buffer(pool_size=64)
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                            mode='train', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_train)
+                            mode='train', cv2_INTER=cv2_INTER, nframes=nframes, global_buffer=gbuffer_train)
         gbuffer_eval = Global_Buffer(pool_size=64)
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                            mode='eval', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_eval)
+                            mode='eval', cv2_INTER=cv2_INTER, nframes=nframes, global_buffer=gbuffer_eval)
         sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
         dataloader_eval = DataLoader(eval_dst, sampler=sampler_eval, num_workers=num_workers)
 
@@ -201,7 +201,7 @@ if __name__ == '__main__':
 
     elif mode == 'test':
         gbuffer = Global_Buffer(pool_size=40)
-        test_dst = MegVSR_Test_Dataset(root_dir, nflames=nflames, shuffle=True, global_buffer=gbuffer)
+        test_dst = MegVSR_Test_Dataset(root_dir, nframes=nframes, shuffle=True, global_buffer=gbuffer)
         imgs_lr = torch.tensor(dtype=np.float32)
         imgs_bc = torch.tensor(dtype=np.float32)
 

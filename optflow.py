@@ -36,30 +36,93 @@ def calOptflow(prvs_frame, next_frame, vis=False):
         no_move = len(I[I==0])
         print(no_move, total, f"{no_move/total * 100:.2f}%")
         prvs_frame = prvs_frame[:,:,::-1]
-        merge = prvs_frame//2 + bgr//2
+        prvs_frame = FlowShift(prvs_frame, flow)
+        merge = prvs_frame*.5 + bgr*.5
         merge[I<1] = prvs_frame[I<1]
-        cv2.imshow('ori', merge)
+        cv2.imshow('new_frames', np.uint8(merge))
         k = cv2.waitKey(10) & 0xff
     return flow
 
+def FlowSplit(flow):
+    fm = [[None]*2, [None]*2]
+    wm = [[None]*2, [None]*2]
+    weights = [[None]*2, [None]*2]
+    flows = [[None]*2, [None]*2]
+    for i in range(2):
+        # xf, xc
+        # yf, yc
+        fm[i][0] = np.floor(flow[:,:,i])
+        fm[i][1] = np.ceil(flow[:,:,i])
+
+    for i in range(2):
+        for j in range(2):
+            wm[i][j] = np.abs(flow[:,:,i] - fm[i][1-j])
+    for i in range(2):
+        for j in range(2):
+            weights[i][j] = wm[0][i] * wm[1][j]
+    for i in range(2):
+        for j in range(2):
+            flows[i][j] = np.stack((fm[0][i], fm[1][j]), axis=-1)
+    return flows, np.expand_dims(np.array(weights),axis=-1)
+
+def FlowShift(image, flow, weight=1):
+    h, w, c = flow.shape
+    y_coords, x_coords = np.mgrid[0:h, 0:w]
+    coords = np.float32(np.dstack([x_coords, y_coords]))
+    pixel_map = coords + flow
+    new_img = cv2.remap(image, pixel_map, None, cv2.INTER_LINEAR)
+    return new_img
+
 if __name__ == '__main__':
+    # flows, w = FlowSplit(np.array([[[1.7,1.2]]]))
+    # print(flows[0][0], w)
     import h5py
     root_dir = r'F:\datasets\MegVSR\train_png\85.mkv_down4x.mp4_frames'
     files = [os.path.join(root_dir, name) for name in os.listdir(root_dir)]
     # imgs = get_frames_from_video(85)
-    flows = []
+    # for k in range(2,20):
+    #     flows = []
+    #     images = []
+    #     for i, file in enumerate(files[k:k+3]):
+    #         images.append(cv2.imread(file)[:,:,::-1])
+    #     for i in range(2):
+    #         flow = calOptflow(images[i], images[2])
+    #         flows.append(flow)
+    #         visualize(flow, f'frame {i+1} --> frame 3')
+    #     flowsplit, weights = FlowSplit(flows[1])
+    #     new_flow = np.zeros_like(flows[1])
+    #     # for i in range(2):
+    #     #     for j in range(2):
+    #     #         # new_flow += flowsplit[i][j]*weights[i][j]
+    #     #         new_img = FlowShift(images[1], flowsplit[i][j])
+    #     #         visualize(new_flow-flows[-1], f'new_flow')
+    #     new_img = FlowShift(images[1], flows[1])
+    #     cv2.imshow('new_img',images[1][:,:,::-1])
+    #     # visualize(new_img, f'new_flow')
+    #     # flow_add = calOptflow(images[0], images[1]) + calOptflow(images[1], images[2])
+    #     # visualize(flow_add, f'frame 1 + frame 2 --> frame 3')
+    #     # flow_sub = flow_add - flows[0]
+    #     # visualize(flow_sub, f'frame 1+2->3  -  frame 1->3')
+    #     cv2.waitKey(0)
+    #     cv2.destroyAllWindows()
+    
     prvs_img = cv2.imread(files[0])[:,:,::-1]
+    cv2.imshow('new_frames',prvs_img[:,:,::-1])
+    cv2.imshow('flow',np.zeros_like(prvs_img))
+    cv2.waitKey(5000)
     for i, file in enumerate(files[1:]):
         next_img = cv2.imread(file)[:,:,::-1]
-        flow = calOptflow(prvs_img, next_img)
-        flows.append(flow)
-    flows.append(np.zeros_like(flow))
-    flows = np.array(flows).astype(np.float32)
-    # f = h5py.File(os.path.join(TRAIN_DATA_STORAGE,'MegVSR_train_%02d.h5' % frame_id), 'w')
-    f = h5py.File('flows.h5', 'w')
-    dst_hr = f.create_dataset('85', data=flows)
-    f.close()
+        flow = calOptflow(prvs_img, next_img, True)
+        prvs_img = next_img
+    #     flows.append(flow)
+    # flows.append(np.zeros_like(flow))
+    # flows = np.array(flows).astype(np.float32)
+    # f = h5py.File('flows.h5', 'w')
+    # dst_hr = f.create_dataset('85', data=flows)
+    # f.close()
+
     # np.savez_compressed("flow_85.npz", flows)
+
     # cap = cv2.VideoCapture(cv2.samples.findFile(r"F:\datasets\MegVSR\train\85.mkv_down4x.mp4"))
     # # ret, frame1 = cap.read()
     # frame1 = imgs[0][:,:,::-1]

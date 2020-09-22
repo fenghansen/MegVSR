@@ -7,12 +7,13 @@ from matplotlib import pyplot as plt
 from utils import *
 
 class Global_Buffer(Dataset):
-    def __init__(self, pool_size=15, index_range=1000):
+    def __init__(self, pool_size=15, index_range=1000, optflow=False):
         super().__init__()
         self.pool_size = pool_size
         self.index_range = index_range
         self.buffer = [None] * index_range
         self.video_frame_paths = None
+        self.optflow = optflow
         self.start = 0
         self.end = 0
         self.check = 0
@@ -30,6 +31,11 @@ class Global_Buffer(Dataset):
         self.buffer[idx] = {'lr': cv2.imread(self.video_frame_paths['lr_frames'][idx])[:,:,::-1]}
         if 'hr_frames' in self.video_frame_paths:
             self.buffer[idx]['hr'] = cv2.imread(self.video_frame_paths['hr_frames'][idx])[:,:,::-1]
+        if self.optflow:
+            if idx == 0:
+                self.buffer[idx]['flow'] = np.zeros_like(self.buffer[idx]['lr'])
+            else:
+                self.buffer[idx]['flow'] = calOptflow(self.buffer[idx-1]['lr'], self.buffer[idx]['lr'])
         self.end = idx
         while self.end - self.start > self.pool_size:
             self.buffer[self.start] = None
@@ -44,15 +50,16 @@ class Global_Buffer(Dataset):
 
 class MegVSR_Dataset(Dataset):
     def __init__(self, root_dir, crop_size=32, crop_per_image=4, global_buffer=None, 
-                nflames=3, cv2_INTER=True, mode='train', shuffle=True):
+                nframes=3, cv2_INTER=True, mode='train', shuffle=True, optflow=False):
         super().__init__()
         self.buffer = []
         self.global_buffer = global_buffer
-        self.nflames = nflames
+        self.nframes = nframes
         self.root_dir = root_dir
         self.crop_per_image = crop_per_image
         self.crop_size = crop_size
         self.cv2_INTER = cv2_INTER
+        self.optflow = optflow
         self.mode = mode
         self.length = 0
         self.shuffle = shuffle
@@ -60,7 +67,7 @@ class MegVSR_Dataset(Dataset):
     
     def initialization(self):
         self.sub_dir = 'train_png' if self.mode == 'train' else 'eval_png'
-        if self.sub_dir == 'eval_png' :#and self.nflames > 1:
+        if self.sub_dir == 'eval_png' :#and self.nframes > 1:
             self.sub_dir = 'eval_video'
         self.data_dir = os.path.join(self.root_dir, self.sub_dir)
         self.video_id = 0
@@ -108,7 +115,7 @@ class MegVSR_Dataset(Dataset):
         self.global_buffer.video_init(self.frame_paths[idx])
         self.buffer = []
         # crop corner
-        self.get_flame_shape()
+        self.get_frame_shape()
         self.init_random_crop_point()
         gc.collect()
     
@@ -127,7 +134,7 @@ class MegVSR_Dataset(Dataset):
             self.w_end.append(w_start + self.crop_size)
             self.aug.append(np.random.randint(8))
 
-    def get_flame_shape(self):
+    def get_frame_shape(self):
         video_frame = self.frame_paths[self.video_id]
         lr_img = cv2.imread(video_frame['lr_frames'][0])[:,:,::-1]
         self.h, self.w, self.c = lr_img.shape
@@ -161,30 +168,56 @@ class MegVSR_Dataset(Dataset):
     # 使用单帧的方法+hash获取多帧的数据
     def multiworkers_buffer(self, idx):
         self.init_random_crop_point()
-        r = self.nflames // 2
+        r = self.nframes // 2
         temp_buffer = []
         for i in range(idx-r, idx+r+1):
             id = min(max(i, 0), self.length-1)
             temp_buffer.append(self.getitem(id))
+        if self.optflow:
+            b,c,h,w = temp_buffer[0]['lr'].shape
+            for i in range(self.nframes):
+                temp_buffer[i]['flow'] = np.zeros((b,2,h,w), dtype=np.float32)
+            for k in range(self.crop_per_image):
+                prvs_crop = temp_buffer[0]['lr'][k].transpose(1,2,0)
+                for i in range(1, self.nframes):
+                    next_crop = temp_buffer[i]['lr'][k].transpose(1,2,0)
+                    temp_buffer[i]['flow'][k] = calOptflow(prvs_crop, next_crop).transpose(2,0,1)
+                    prvs_crop = next_crop
+
         return self.buffer_stack_on_channels(temp_buffer)
 
     # 将nframe帧的buffer中的数据叠成一个tensor形状ndarray
     def buffer_stack_on_channels(self, buffer=None):
         data = {}
-        r = self.nflames // 2
-        data['frame_id'] = buffer[r]['frame_id']
-        data['video_id'] = buffer[r]['video_id']
-        b, c, h, w = buffer[r]['lr'].shape
-        data['lr'] = np.zeros((b, c*self.nflames, h, w))
-        data['hr'] = np.zeros((b, c*self.nflames, h*4, w*4))
+        cf = self.nframes // 2
+        data['frame_id'] = buffer[cf]['frame_id']
+        data['video_id'] = buffer[cf]['video_id']
+        b, c, h, w = buffer[cf]['lr'].shape
+        data['lr'] = np.zeros((b, c*self.nframes, h, w))
+        data['hr'] = np.zeros((b, c*self.nframes, h*4, w*4))
         if self.cv2_INTER:
-            data['bc'] = np.zeros((b, c*self.nflames, h*4, w*4))
+            data['bc'] = np.zeros((b, c*self.nframes, h*4, w*4))
 
         for i, frame in enumerate(buffer):
             data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
             data['hr'][:, c*i:c*(i+1), :, :] = frame['hr']
             if self.cv2_INTER:
                 data['bc'][:, c*i:c*(i+1), :, :] = frame['bc']
+        
+        if self.optflow:
+            data['flow'] = np.zeros((b, 2*self.nframes, h, w))
+            data['flow'][:,2*(cf-1):2*(cf-0),:,:] = buffer[cf]['flow']
+            data['flow'][:,2*(cf+1):2*(cf+2),:,:] = -buffer[cf+1]['flow']
+
+            if self.nframes == 5:
+                data['flow'][:,2*(cf-2):2*(cf-1),:,:] = buffer[cf-1]['flow'] + buffer[cf]['flow']
+                data['flow'][:,2*(cf+2):2*(cf+3),:,:] = -buffer[cf+1]['flow'] - buffer[cf+2]['flow']
+        
+        for i in range(self.nframes):
+            flow = data['flow'][:,2*i:2*(i+1),:,:]
+            visualize(flow[0].transpose(1,2,0), name=f"Frame{data['frame_id']} - flow{i}")
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
         
         return data
 
@@ -199,12 +232,14 @@ class MegVSR_Dataset(Dataset):
         else:
             lr_img = self.global_buffer[idx]['lr']
             hr_img = self.global_buffer[idx]['hr']
+            if self.optflow:
+                flow = self.global_buffer[idx]['flow']
             
         if self.mode == 'train':
-            if self.nflames > 1:
+            if self.nframes > 1:
                 lr_crops, hr_crops = self.video_crop(lr_img, hr_img)
             else:
-                aug = 'SISR' if self.nflames == 1 else None
+                aug = 'SISR' if self.nframes == 1 else np.random.randint(8)
                 lr_crops, hr_crops = random_crop(lr_img, hr_img, aug=aug,
                         crop_size=self.crop_size, crop_per_image=self.crop_per_image)
         else:
@@ -232,7 +267,7 @@ class MegVSR_Dataset(Dataset):
         return data
 
     def liner_buffer(self, idx):
-        r = self.nflames // 2
+        r = self.nframes // 2
         data = None
         # 首位置，前相邻帧为本帧
         if idx == 0:
@@ -256,11 +291,11 @@ class MegVSR_Dataset(Dataset):
 
         return self.buffer_stack_on_channels(self.buffer)
     
-    def bulid_h5datasets():
+    def bulid_h5datasets(self):
         compute_optflow(self.root_dir)
 
     def __getitem__(self, idx):
-        if self.nflames > 1:
+        if self.nframes > 1:
             if self.shuffle:
                 return self.multiworkers_buffer(idx)
             else:
@@ -270,13 +305,13 @@ class MegVSR_Dataset(Dataset):
 
 
 class MegVSR_Test_Dataset(Dataset):
-    def __init__(self, root_dir, nflames=3, cv2_INTER=True, shuffle=False,
+    def __init__(self, root_dir, nframes=3, cv2_INTER=True, shuffle=False,
                 global_buffer=None):
         super().__init__()
         self.root_dir = root_dir
         self.buffer = []
         self.global_buffer = global_buffer
-        self.nflames = nflames
+        self.nframes = nframes
         self.shuffle = shuffle
         self.cv2_INTER = cv2_INTER
         self.initialization()
@@ -320,7 +355,7 @@ class MegVSR_Test_Dataset(Dataset):
     
     # 使用单帧的方法+hash获取多帧的数据
     def multiworkers_buffer(self, idx):
-        r = self.nflames // 2
+        r = self.nframes // 2
         temp_buffer = []
         for i in range(idx-r, idx+r+1):
             id = min(max(i, 0), self.__len__()-1)
@@ -330,18 +365,33 @@ class MegVSR_Test_Dataset(Dataset):
     # 将nframe帧的buffer中的数据叠成一个tensor形状ndarray
     def buffer_stack_on_channels(self, buffer=None):
         data = {}
-        r = self.nflames // 2
-        data['frame_id'] = buffer[r]['frame_id']
-        data['video_id'] = buffer[r]['video_id']
-        b, c, h, w = buffer[r]['lr'].shape
-        data['lr'] = np.zeros((b, c*self.nflames, h, w))
+        cf = self.nframes // 2
+        data['frame_id'] = buffer[cf]['frame_id']
+        data['video_id'] = buffer[cf]['video_id']
+        b, c, h, w = buffer[cf]['lr'].shape
+        data['lr'] = np.zeros((b, c*self.nframes, h, w))
         if self.cv2_INTER:
-            data['bc'] = np.zeros((b, c*self.nflames, h*4, w*4))
+            data['bc'] = np.zeros((b, c*self.nframes, h*4, w*4))
 
         for i, frame in enumerate(buffer):
             data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
             if self.cv2_INTER:
                 data['bc'][:, c*i:c*(i+1), :, :] = frame['bc']
+        
+        if self.optflow:
+            data['flow'] = np.zeros((b, c*self.nframes, h, w))
+            data['flow'][:,c*(cf-1):c*(cf-0),:,:] = buffer[cf]['flow']
+            data['flow'][:,c*(cf+1):c*(cf+2),:,:] = -buffer[cf+1]['flow']
+
+            if self.nframes == 5:
+                data['flow'][:,c*(cf-2):c*(cf-1),:,:] = buffer[cf-1]['flow'] + buffer[cf]['flow']
+                data['flow'][:,c*(cf+2):c*(cf+3),:,:] = -buffer[cf+1]['flow'] - buffer[cf+2]['flow']
+        
+        for i in range(self.nframes):
+            flow = data['flow'][:,c*i:c*(i+1),:,:]
+            visualize(flow, name=f"Frame{data['frame_id']} - flow{i}")
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
         
         return data
     
@@ -371,7 +421,7 @@ class MegVSR_Test_Dataset(Dataset):
         return data
 
     def liner_buffer(self, idx):
-        r = self.nflames // 2
+        r = self.nframes // 2
         data = None
         # 首位置，前相邻帧为本帧
         if idx == 0:
@@ -396,7 +446,7 @@ class MegVSR_Test_Dataset(Dataset):
         return self.buffer_stack_on_channels(self.buffer)
 
     def __getitem__(self, idx):
-        if self.nflames > 1:
+        if self.nframes > 1:
             if self.shuffle:
                 return self.multiworkers_buffer(idx)
             else:
@@ -406,19 +456,6 @@ class MegVSR_Test_Dataset(Dataset):
 
 def random_crop(lr_img, hr_img, crop_size=32, crop_per_image=8, aug=None):
     # 本函数用于将numpy随机裁剪成以crop_size为边长的方形crop_per_image等份
-    if use_mge:
-        is_tensor = False
-    else:
-        is_tensor = torch.is_tensor(lr_img)
-    if is_tensor:
-        dtype = lr_img.dtype
-        device = lr_img.device
-        if device != 'cpu':
-            lr_img = lr_img.cpu()
-            hr_img = hr_img.cpu()
-        lr_img = lr_img.numpy()
-        hr_img = hr_img.numpy()
-
     h, w, c = lr_img.shape
     # 创建空numpy做画布
     lr_crops = np.zeros((crop_per_image, crop_size, crop_size, c))
@@ -441,10 +478,6 @@ def random_crop(lr_img, hr_img, crop_size=32, crop_per_image=8, aug=None):
 
         lr_crops[i:i+1, ...] = lr_crop
         hr_crops[i:i+1, ...] = hr_crop
-
-    if is_tensor:
-        lr_crops = torch.from_numpy(lr_crops).to(device).type(dtype)
-        hr_crops = torch.from_numpy(hr_crops).to(device).type(dtype)
 
     return lr_crops, hr_crops
 
@@ -481,29 +514,30 @@ def data_aug(image, mode):
 
 if __name__=='__main__':
     crop_per_image = 4
-    nflames = 3
-    dst = MegVSR_Dataset('F:/datasets/MegVSR', crop_per_image=crop_per_image, 
-                        mode='train',crop_size=100, nflames=nflames)
+    nframes = 5
+    gbuffer_train = Global_Buffer(pool_size=15, optflow=True)
+    dst = MegVSR_Dataset('F:/datasets/MegVSR', crop_per_image=crop_per_image, optflow=True,
+                        mode='train',crop_size=269, nframes=nframes, global_buffer=gbuffer_train)
     # dst = MegVSR_Test_Dataset('F:/datasets/MegVSR/', crop_per_image=crop_per_image, 
-                        # mode='train',crop_size=100, nflames=nflames)
-    dataloader_train = DataLoader(dst, batch_size=1, shuffle=False, num_workers=2)
-    for i in range(11,20):
+                        # mode='train',crop_size=100, nframes=nframes)
+    dataloader_train = DataLoader(dst, batch_size=1, shuffle=False, num_workers=0)
+    for i in range(84,86):
         dst.next_video(i)
         for k, data in enumerate(dataloader_train):
             # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
             imgs_lr = tensor_dim5to4(data['bc'])
             imgs_hr = tensor_dim5to4(data['hr'])
             print(data['video_id'], data['frame_id'])
-            fig = plt.figure(figsize=(20,10))
-            ax = [None]*2*nflames
-            input_out = np.uint8(imgs_lr[0].numpy().transpose(1,2,0)*255)
-            gt_out = np.uint8(imgs_hr[0].numpy().transpose(1,2,0)*255)
-            for i in range(nflames):
-                ax[i*2] = fig.add_subplot(2, nflames, i+1)
-                ax[i*2+1] = fig.add_subplot(2, nflames, i+nflames+1)
-                ax[i*2].imshow(input_out[:,:,3*i:3*i+3])
-                ax[i*2+1].imshow(gt_out[:,:,3*i:3*i+3])
-            plt.show()
-            plt.close()
+            # fig = plt.figure(figsize=(20,10))
+            # ax = [None]*2*nframes
+            # input_out = np.uint8(imgs_lr[0].numpy().transpose(1,2,0)*255)
+            # gt_out = np.uint8(imgs_hr[0].numpy().transpose(1,2,0)*255)
+            # for i in range(nframes):
+            #     ax[i*2] = fig.add_subplot(2, nframes, i+1)
+            #     ax[i*2+1] = fig.add_subplot(2, nframes, i+nframes+1)
+            #     ax[i*2].imshow(input_out[:,:,3*i:3*i+3])
+            #     ax[i*2+1].imshow(gt_out[:,:,3*i:3*i+3])
+            # plt.show()
+            # plt.close()
             print(len(dataloader_train),len(dst))
-            if k>5: break
+            # if k>5: break

@@ -21,7 +21,7 @@ if __name__ == '__main__':
     batch_size = 8
     crop_per_image = 4
     crop_size = 32
-    nflames = 5
+    nframes = 5
     num_workers = 0
     step_size = 2
     learning_rate = 4e-5
@@ -33,7 +33,7 @@ if __name__ == '__main__':
     symbolic = True
     cv2_INTER = False
 
-    net = SlowFusion_RRDB(in_nc=nflames*3,nb=5, cv2_INTER=cv2_INTER)
+    net = SlowFusion_RRDB(in_nc=nframes*3,nb=5, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
     # load weight
     # model = torch.load('last_model.pth')
@@ -45,12 +45,12 @@ if __name__ == '__main__':
     if mode == 'train':
         gbuffer_train = Global_Buffer(pool_size=15)
         train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                            mode='train', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_train)
+                            mode='train', cv2_INTER=cv2_INTER, nframes=nframes, global_buffer=gbuffer_train)
         dataloader_train = DataLoader(train_dst, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
         gbuffer_eval = Global_Buffer(pool_size=15)
         eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
-                            mode='eval', cv2_INTER=cv2_INTER, nflames=nflames, global_buffer=gbuffer_eval)
+                            mode='eval', cv2_INTER=cv2_INTER, nframes=nframes, global_buffer=gbuffer_eval)
         dataloader_eval = DataLoader(eval_dst, batch_size=1, shuffle=False, num_workers=num_workers)
 
         scheduler = lr_scheduler.StepLR(optimizer, gamma=0.8, step_size=step_size)
@@ -61,7 +61,7 @@ if __name__ == '__main__':
                 train_dst.next_video(video_id)
                 cnt = 0
                 total_loss = 0
-                cf = nflames//2   # center_frame
+                cf = nframes//2   # center_frame
 
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):
@@ -153,7 +153,7 @@ if __name__ == '__main__':
         net.eval()
         bs_test = 4
         gbuffer = Global_Buffer(pool_size=15)
-        test_dst = MegVSR_Test_Dataset(root_dir, cv2_INTER=False, nflames=nflames, shuffle=True, global_buffer=gbuffer)
+        test_dst = MegVSR_Test_Dataset(root_dir, cv2_INTER=False, nframes=nframes, shuffle=True, global_buffer=gbuffer)
         dataloader_test = DataLoader(test_dst, batch_size=bs_test, shuffle=False, num_workers=4)
         net = net.to(device)
         for video_id in range(90, 90+test_dst.num_of_videos):
