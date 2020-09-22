@@ -33,7 +33,8 @@ class Global_Buffer(Dataset):
             self.buffer[idx]['hr'] = cv2.imread(self.video_frame_paths['hr_frames'][idx])[:,:,::-1]
         if self.optflow:
             if idx == 0:
-                self.buffer[idx]['flow'] = np.zeros_like(self.buffer[idx]['lr'])
+                h, w, c = self.buffer[idx]['lr'].shape
+                self.buffer[idx]['flow'] = np.zeros((h,w,2), dtype=np.float32)
             else:
                 self.buffer[idx]['flow'] = calOptflow(self.buffer[idx-1]['lr'], self.buffer[idx]['lr'])
         self.end = idx
@@ -140,17 +141,15 @@ class MegVSR_Dataset(Dataset):
         self.h, self.w, self.c = lr_img.shape
     
     # 按照现有固定的crop_point裁剪video中指定位置的数据
-    def video_crop(self, lr_img, hr_img):
+    def video_crop(self, lr_img, hr_img, flow=None):
         # 本函数用于将numpy随机裁剪成以crop_size为边长的方形crop_per_image等份
-        if use_mge:
-            is_tensor = False
-        else:
-            is_tensor = torch.is_tensor(lr_img)
-
+        data = {}
         h, w, c = lr_img.shape
         # 创建空numpy做画布
         lr_crops = np.zeros((self.crop_per_image, self.crop_size, self.crop_size, c))
         hr_crops = np.zeros((self.crop_per_image, self.crop_size*4, self.crop_size*4, c))
+        if self.optflow:
+            flow_crops = np.zeros((self.crop_per_image, self.crop_size, self.crop_size, 2))
 
         # 往空tensor的通道上贴patchs
         for i in range(self.crop_per_image):
@@ -160,10 +159,19 @@ class MegVSR_Dataset(Dataset):
             lr_crop = data_aug(lr_crop, self.aug[i])
             hr_crop = data_aug(hr_crop, self.aug[i])
 
-            lr_crops[i:i+1, ...] = lr_crop
-            hr_crops[i:i+1, ...] = hr_crop
+            lr_crops[i, ...] = lr_crop
+            hr_crops[i, ...] = hr_crop
+            if self.optflow:
+                flow_crop = flow[self.h_start[i]:self.h_end[i], self.w_start[i]:self.w_end[i], :]
+                flow_crop = data_aug(flow_crop, self.aug[i])
+                flow_crops[i, ...] = flow_crop
 
-        return lr_crops, hr_crops
+        data['lr'] = lr_crops
+        data['hr'] = hr_crops
+        if self.optflow:
+            data['flow'] = flow_crops
+        
+        return data
     
     # 使用单帧的方法+hash获取多帧的数据
     def multiworkers_buffer(self, idx):
@@ -173,16 +181,16 @@ class MegVSR_Dataset(Dataset):
         for i in range(idx-r, idx+r+1):
             id = min(max(i, 0), self.length-1)
             temp_buffer.append(self.getitem(id))
-        if self.optflow:
-            b,c,h,w = temp_buffer[0]['lr'].shape
-            for i in range(self.nframes):
-                temp_buffer[i]['flow'] = np.zeros((b,2,h,w), dtype=np.float32)
-            for k in range(self.crop_per_image):
-                prvs_crop = temp_buffer[0]['lr'][k].transpose(1,2,0)
-                for i in range(1, self.nframes):
-                    next_crop = temp_buffer[i]['lr'][k].transpose(1,2,0)
-                    temp_buffer[i]['flow'][k] = calOptflow(prvs_crop, next_crop).transpose(2,0,1)
-                    prvs_crop = next_crop
+        # if self.optflow:
+        #     b,c,h,w = temp_buffer[0]['lr'].shape
+        #     for i in range(self.nframes):
+        #         temp_buffer[i]['flow'] = np.zeros((b,2,h,w), dtype=np.float32)
+        #     for k in range(self.crop_per_image):
+        #         prvs_crop = temp_buffer[0]['lr'][k].transpose(1,2,0)
+        #         for i in range(1, self.nframes):
+        #             next_crop = temp_buffer[i]['lr'][k].transpose(1,2,0)
+        #             temp_buffer[i]['flow'][k] = calOptflow(prvs_crop, next_crop).transpose(2,0,1)
+        #             prvs_crop = next_crop
 
         return self.buffer_stack_on_channels(temp_buffer)
 
@@ -215,7 +223,7 @@ class MegVSR_Dataset(Dataset):
         
         for i in range(self.nframes):
             flow = data['flow'][:,2*i:2*(i+1),:,:]
-            visualize(flow[0].transpose(1,2,0), name=f"Frame{data['frame_id']} - flow{i}")
+            visualize(flow[0].transpose(1,2,0), name=f"Frame{i-2}")
         cv2.waitKey(0)
         cv2.destroyAllWindows()
         
@@ -237,7 +245,10 @@ class MegVSR_Dataset(Dataset):
             
         if self.mode == 'train':
             if self.nframes > 1:
-                lr_crops, hr_crops = self.video_crop(lr_img, hr_img)
+                crops = self.video_crop(lr_img, hr_img, flow=flow)
+                lr_crops = crops['lr']
+                hr_crops = crops['hr']
+                flow_crops = crops['flow']
             else:
                 aug = 'SISR' if self.nframes == 1 else np.random.randint(8)
                 lr_crops, hr_crops = random_crop(lr_img, hr_img, aug=aug,
@@ -245,6 +256,8 @@ class MegVSR_Dataset(Dataset):
         else:
             lr_crops = np.expand_dims(lr_img, 0)
             hr_crops = np.expand_dims(hr_img, 0)
+            if self.optflow:
+                flow_crops = np.expand_dims(flow, 0)
 
         if self.cv2_INTER:
             bc_crops = np.zeros_like(hr_crops)
@@ -256,13 +269,15 @@ class MegVSR_Dataset(Dataset):
         hr_crops = hr_crops.transpose(0,3,1,2).astype(np.float32) / 255.
         if self.cv2_INTER:
             bc_crops = bc_crops.transpose(0,3,1,2).astype(np.float32) / 255.
+            data['bc'] = np.ascontiguousarray(bc_crops)
+        if self.optflow:
+            flow_crops = flow_crops.transpose(0,3,1,2).astype(np.float32) / 255.
+            data['flow'] = np.ascontiguousarray(flow_crops)
 
         data['frame_id'] = '%04d' % idx
         data['video_id'] = '%02d' % video_id
         data['lr'] = np.ascontiguousarray(lr_crops)
         data['hr'] = np.ascontiguousarray(hr_crops)
-        if self.cv2_INTER:
-            data['bc'] = np.ascontiguousarray(bc_crops)
 
         return data
 
@@ -389,7 +404,7 @@ class MegVSR_Test_Dataset(Dataset):
         
         for i in range(self.nframes):
             flow = data['flow'][:,c*i:c*(i+1),:,:]
-            visualize(flow, name=f"Frame{data['frame_id']} - flow{i}")
+            visualize(flow, name=f"Frame{i-2}")
         cv2.waitKey(0)
         cv2.destroyAllWindows()
         
