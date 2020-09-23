@@ -200,38 +200,48 @@ class MegVSR_Dataset(Dataset):
         cf = self.nframes // 2
         data['frame_id'] = buffer[cf]['frame_id']
         data['video_id'] = buffer[cf]['video_id']
-        b, c, h, w = buffer[cf]['lr'].shape
-        data['lr'] = np.zeros((b, c*self.nframes, h, w), dtype=np.float32)
-        data['hr'] = np.zeros((b, c*self.nframes, h*4, w*4), dtype=np.float32)
+        b, h, w, c = buffer[cf]['lr'].shape
+        data['lr'] = np.zeros((b, h, w, c*self.nframes), dtype=np.float32)
+        data['hr'] = np.zeros((b, h*4, w*4, c*self.nframes), dtype=np.float32)
         if self.cv2_INTER:
-            data['bc'] = np.zeros((b, c*self.nframes, h*4, w*4), dtype=np.float32)
+            data['bc'] = np.zeros((b, h*4, w*4, c*self.nframes), dtype=np.float32)
 
         for i, frame in enumerate(buffer):
-            data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
-            data['hr'][:, c*i:c*(i+1), :, :] = frame['hr']
+            data['lr'][:, :, :, c*i:c*(i+1)] = frame['lr']
+            data['hr'][:, :, :, c*i:c*(i+1)] = frame['hr']
             if self.cv2_INTER:
-                data['bc'][:, c*i:c*(i+1), :, :] = frame['bc']
+                data['bc'][:, :, :, c*i:c*(i+1)] = frame['bc']
         
         if self.optflow:
-            data['flow'] = np.zeros((b, 2*self.nframes, h, w), dtype=np.float32)
-            data['flow'][:,2*(cf-1):2*(cf-0),:,:] = buffer[cf]['flow']
-            data['flow'][:,2*(cf+1):2*(cf+2),:,:] = -buffer[cf+1]['flow']
+            data['flow'] = np.zeros((b, h, w, 2*self.nframes), dtype=np.float32)
+            data['flow'][:,:,:,2*(cf-1):2*(cf-0)] = buffer[cf]['flow']
+            data['flow'][:,:,:,2*(cf+1):2*(cf+2)] = -buffer[cf+1]['flow']
 
             if self.nframes == 5:
-                data['flow'][:,2*(cf-2):2*(cf-1),:,:] = buffer[cf-1]['flow'] + buffer[cf]['flow']
-                data['flow'][:,2*(cf+2):2*(cf+3),:,:] = -buffer[cf+1]['flow'] - buffer[cf+2]['flow']
+                data['flow'][:,:,:,2*(cf-2):2*(cf-1)] = buffer[cf-1]['flow'] + buffer[cf]['flow']
+                data['flow'][:,:,:,2*(cf+2):2*(cf+3)] = -buffer[cf+1]['flow'] - buffer[cf+2]['flow']
         
-        for i in range(self.nframes):
-            image = data['lr'][0,c*i:c*(i+1),:,:].transpose(1,2,0)
-            flow = data['flow'][0,2*i:2*(i+1),:,:].transpose(1,2,0)
-            shift = FlowShift(image, flow)
-            if i == cf: continue
-            bgr = visualize(flow, name=f"Frame{i-2}", show=False)
-            final = bgr*0.5 + shift*127.5
-            cv2.imshow(f"Frame{i-2}", final[:,:,::-1].astype(np.uint8))
-            # cv2.imshow(f"ori{i-2}", shift[:,:,::-1]-image[:,:,::-1])
-        cv2.waitKey(30)
+            for crop_id in range(b):
+                for i in range(self.nframes):
+                    if i == cf: continue
+                    image = data['lr'][crop_id,:,:,c*i:c*(i+1)]
+                    flow = data['flow'][crop_id,:,:,2*i:2*(i+1)]
+                    shift = FlowShift(image, flow)
+                    data['lr'][crop_id,:,:,c*i:c*(i+1)] = shift
+                    # show test
+                #     bgr, ratio = visualize(flow, name=f"Frame{i-2}", show=False)
+                #     final = bgr*0.5 + shift*127.5
+                #     cv2.imshow(f"Frame{i-2}", final[:,:,::-1].astype(np.uint8))
+                #     # cv2.imshow(f"ori{i-2}", shift[:,:,::-1]-image[:,:,::-1])
+                # cv2.waitKey(30)
         
+        data['lr'] = np.ascontiguousarray(data['lr'].transpose(0,3,1,2))
+        data['hr'] = np.ascontiguousarray(data['hr'].transpose(0,3,1,2))
+        if self.cv2_INTER:
+            data['bc'] = np.ascontiguousarray(data['bc'].transpose(0,3,1,2))
+        if self.optflow:
+            data['flow'] = np.ascontiguousarray(data['flow'].transpose(0,3,1,2))
+
         return data
 
     # 获取单帧的一组数据
@@ -270,19 +280,19 @@ class MegVSR_Dataset(Dataset):
                 bc_crops[i, ...] = cv2.resize(lr_crops[i], None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
             bc_crops = np.clip(bc_crops, 0, 255)
 
-        lr_crops = lr_crops.transpose(0,3,1,2).astype(np.float32) / 255.
-        hr_crops = hr_crops.transpose(0,3,1,2).astype(np.float32) / 255.
+        lr_crops = lr_crops.astype(np.float32) / 255.
+        hr_crops = hr_crops.astype(np.float32) / 255.
         if self.cv2_INTER:
-            bc_crops = bc_crops.transpose(0,3,1,2).astype(np.float32) / 255.
-            data['bc'] = np.ascontiguousarray(bc_crops)
+            bc_crops = bc_crops.astype(np.float32) / 255.
+            data['bc'] = bc_crops
         if self.optflow:
-            flow_crops = flow_crops.transpose(0,3,1,2).astype(np.float32)
-            data['flow'] = np.ascontiguousarray(flow_crops)
+            flow_crops = flow_crops.astype(np.float32)
+            data['flow'] = flow_crops
 
         data['frame_id'] = '%04d' % idx
         data['video_id'] = '%02d' % video_id
-        data['lr'] = np.ascontiguousarray(lr_crops)
-        data['hr'] = np.ascontiguousarray(hr_crops)
+        data['lr'] = lr_crops
+        data['hr'] = hr_crops
 
         return data
 
@@ -414,6 +424,12 @@ class MegVSR_Test_Dataset(Dataset):
         cv2.waitKey(10)
         # cv2.destroyAllWindows()
         
+        data['lr'] = np.ascontiguousarray(data['lr'].transpose(0,3,1,2))
+        if self.cv2_INTER:
+            data['bc'] = np.ascontiguousarray(data['bc'].transpose(0,3,1,2))
+        if self.optflow:
+            data['flow'] = np.ascontiguousarray(data['flow'].transpose(0,3,1,2))
+
         return data
     
     def getitem(self, idx):
@@ -430,14 +446,14 @@ class MegVSR_Test_Dataset(Dataset):
                 bc_crops[i, ...] = cv2.resize(lr_crops[i], None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
             bc_crops = np.clip(bc_crops, 0, 255)
 
-        lr_crops = scale_down(lr_crops.transpose(0,3,1,2))
+        lr_crops = scale_down(lr_crops)
         data['frame_id'] = '%04d' % idx
         data['video_id'] = '%02d' % video_id
-        data['lr'] = np.ascontiguousarray(lr_crops)
+        data['lr'] = lr_crops
 
         if self.cv2_INTER:
-            bc_crops = scale_down(bc_crops.transpose(0,3,1,2))
-            data['bc'] = np.ascontiguousarray(bc_crops)
+            bc_crops = scale_down(bc_crops)
+            data['bc'] = bc_crops
 
         return data
 
@@ -534,11 +550,11 @@ def data_aug(image, mode):
 
 
 if __name__=='__main__':
-    crop_per_image = 1
+    crop_per_image = 2
     nframes = 5
     gbuffer_train = Global_Buffer(pool_size=15, optflow=True)
     dst = MegVSR_Dataset('F:/datasets/MegVSR', crop_per_image=crop_per_image, optflow=True,
-                        mode='train',crop_size=128, nframes=nframes, global_buffer=gbuffer_train)
+                        mode='train',crop_size=200, nframes=nframes, global_buffer=gbuffer_train)
     # dst = MegVSR_Test_Dataset('F:/datasets/MegVSR/', crop_per_image=crop_per_image, 
                         # mode='train',crop_size=100, nframes=nframes)
     dataloader_train = DataLoader(dst, batch_size=1, shuffle=False, num_workers=0)

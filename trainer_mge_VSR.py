@@ -70,11 +70,11 @@ if __name__ == '__main__':
         return -10.0 * F.log(F.mean(F.power(high-low, 2))) / F.log(torch.tensor(10.0))
 
     if mode == 'train':
-        gbuffer_train = Global_Buffer(pool_size=64)
-        train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
+        gbuffer_train = Global_Buffer(pool_size=64, optflow=True)
+        train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size, optflow=True,
                             mode='train', cv2_INTER=cv2_INTER, nframes=nframes, global_buffer=gbuffer_train)
-        gbuffer_eval = Global_Buffer(pool_size=64)
-        eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
+        gbuffer_eval = Global_Buffer(pool_size=64, optflow=True)
+        eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size, optflow=True,
                             mode='eval', cv2_INTER=cv2_INTER, nframes=nframes, global_buffer=gbuffer_eval)
         sampler_eval = SequentialSampler(dataset=eval_dst, batch_size=1)
         dataloader_eval = DataLoader(eval_dst, sampler=sampler_eval, num_workers=num_workers)

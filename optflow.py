@@ -19,27 +19,29 @@ def visualize(flow, name='flow', show=True):
     bgr = cv2.cvtColor(hsv,cv2.COLOR_HSV2BGR)
     if show:
         cv2.imshow(name, bgr)
-    return bgr
+    return bgr, np.mean(mag)*100
 
-def calOptflow(prvs_frame, next_frame, vis=False):
+def calOptflow(prvs_frame, next_frame, vis=False, window_size=15):
     hsv = np.zeros_like(prvs_frame, dtype=np.float32)
     next_frame_gray = rgb2gray(next_frame).astype(np.float32)
     prvs_frame_gray = rgb2gray(prvs_frame).astype(np.float32)
-    flow = cv2.calcOpticalFlowFarneback(prvs_frame_gray, next_frame_gray, None, 0.5, 3, 15, 3, 5, 1.2,
-                                        cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
+    flow = cv2.calcOpticalFlowFarneback(prvs_frame_gray, next_frame_gray, None, 0.5, 3, window_size, 3, 5, 1.2, 1)
     if vis:
-        bgr = visualize(flow, name='flow')
+        bgr, ratio1 = visualize(flow, name='flow')
         I = np.mean(bgr,axis=-1)
         shape = I.shape
         total = 1
         for i, s in enumerate(shape):
             total *= s
         no_move = len(I[I==0])
-        print(no_move, total, f"{no_move/total * 100:.2f}%")
-        prvs_frame = prvs_frame[:,:,::-1]/255.
-        prvs_frame = FlowShift(prvs_frame, flow)
-        merge = prvs_frame*127.5 + bgr*.5
-        merge[I<1] = prvs_frame[I<1]*255
+        
+        prvs_frame = prvs_frame[:,:,::-1]
+        next_frame_fake = FlowShift(prvs_frame, flow)
+        _, ratio2 = visualize(calOptflow(next_frame, next_frame_fake), name='differ')
+
+        print(no_move, total, f"{no_move/total * 100:.2f}%, ratio: [{ratio1:.2f}] | [{ratio2:.2f}]")
+        merge = next_frame_fake*.5 + bgr*.5
+        merge[I<1] = next_frame_fake[I<1]
         cv2.imshow('new_frames', np.uint8(merge))
         k = cv2.waitKey(30) & 0xff
     return flow
@@ -70,7 +72,7 @@ def FlowShift(image, flow, weight=1):
     h, w, c = flow.shape
     y_coords, x_coords = np.mgrid[0:h, 0:w]
     coords = np.float32(np.dstack([x_coords, y_coords]))
-    pixel_map = coords + flow
+    pixel_map = coords - flow
     new_img = cv2.remap(image, pixel_map, None, cv2.INTER_LINEAR)
     return new_img
 

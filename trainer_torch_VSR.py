@@ -33,7 +33,7 @@ if __name__ == '__main__':
     symbolic = True
     cv2_INTER = False
 
-    net = SlowFusion_RRDB(in_nc=nframes*3,nb=5, cv2_INTER=cv2_INTER)
+    net = EarlyFusion_RRDB(in_nc=nframes*3,nb=5, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
     # load weight
     # model = torch.load('last_model.pth')
@@ -43,17 +43,17 @@ if __name__ == '__main__':
     random.seed(100)
     # 训练
     if mode == 'train':
-        gbuffer_train = Global_Buffer(pool_size=15)
-        train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
+        gbuffer_train = Global_Buffer(pool_size=64, optflow=True)
+        train_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size, optflow=True,
                             mode='train', cv2_INTER=cv2_INTER, nframes=nframes, global_buffer=gbuffer_train)
         dataloader_train = DataLoader(train_dst, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-        gbuffer_eval = Global_Buffer(pool_size=15)
-        eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size,
+        gbuffer_eval = Global_Buffer(pool_size=64, optflow=True)
+        eval_dst = MegVSR_Dataset(root_dir, crop_per_image=crop_per_image, crop_size=crop_size, optflow=True,
                             mode='eval', cv2_INTER=cv2_INTER, nframes=nframes, global_buffer=gbuffer_eval)
         dataloader_eval = DataLoader(eval_dst, batch_size=1, shuffle=False, num_workers=num_workers)
 
-        scheduler = lr_scheduler.StepLR(optimizer, gamma=0.8, step_size=step_size)
+        scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
         net = net.to(device)
         net.train()
         for epoch in range(last_epoch+1, stop_epoch+1):
@@ -62,7 +62,7 @@ if __name__ == '__main__':
                 cnt = 0
                 total_loss = 0
                 cf = nframes//2   # center_frame
-
+                break
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
@@ -129,7 +129,7 @@ if __name__ == '__main__':
                         with torch.no_grad():
                             imgs_sr = net(imgs_lr)
                             imgs_sr = torch.clamp(imgs_sr, 0, 1)
-                            img_lr = imgs_lr[0][cf].detach().cpu().numpy()
+                            img_lr = imgs_lr[0][cf*3:cf*3+3].detach().cpu().numpy()
                             img_sr = imgs_sr[0].detach().cpu().numpy()
                             img_hr = imgs_hr[0].detach().cpu().numpy()
 

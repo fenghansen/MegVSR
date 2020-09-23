@@ -97,18 +97,14 @@ class EarlyFusion_RRDB(nn.Module):
                 self.bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
 
     def forward(self, x):
-        fea = self.Unet(x)
-        # b,t,c,h,w = x.size()
-        # fea = self.PCC(x)
-        # fea = self.conv_first(x.view(-1,c,h,w)).view(b,t,-1,h,w)
-        # fea = self.TSA(fea)
+        fea = self.FusionUnet(x)
         trunk = self.trunk_conv(self.RRDB_trunk(fea))
         fea = fea + trunk
 
         fea = self.upsample(fea)
         out = self.conv_last(self.lrelu(self.HRconv(fea)))
         if self.cv2_INTER is False:
-            imgs_bc = self.bicubic(x[:,self.cf,:,:,:])
+            imgs_bc = self.bicubic(x[:,self.cf*3:self.cf*3+3,:,:])
             out = out + imgs_bc
 
         return out
@@ -411,7 +407,7 @@ class FusionUnet(nn.Module):
     def __init__(self, in_channels=2, out_channels=3, nf=64, **kwargs):
         super().__init__()
         #device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.conv1 = ResConvBlock_CBAM(in_channels,  nf=nf)
+        self.conv1 = ResConvBlock_CBAM(in_channels, nf=nf)
         self.pool1 = nn.MaxPool2d(kernel_size=2)
         
         self.conv2 = ResConvBlock_CBAM(nf, nf=nf*2)

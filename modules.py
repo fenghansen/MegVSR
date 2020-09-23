@@ -253,6 +253,8 @@ class SpatialAttention(nn.Module):
     def forward(self, x):
         avgout = self.mean(x, 1, True)
         maxout = self.max(x, 1, True)
+        if use_mge is not True:
+            maxout = maxout[0]
         x = self.concat([avgout, maxout], 1)
         x = self.conv(x)
         return self.sigmoid(x)
