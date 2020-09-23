@@ -16,7 +16,7 @@ class Global_Buffer(Dataset):
         self.optflow = optflow
         self.start = 0
         self.end = 0
-        self.check = 0
+        self.check = [False] * index_range
     
     def __len__(self):
         return len(self.buffer)
@@ -24,6 +24,7 @@ class Global_Buffer(Dataset):
     def video_init(self, video_frame_paths):
         self.video_frame_paths = video_frame_paths
         self.buffer = [None] * self.index_range
+        self.check = [False] * self.index_range
         self.start = 0
         self.end = 0
     
@@ -32,18 +33,33 @@ class Global_Buffer(Dataset):
         if 'hr_frames' in self.video_frame_paths:
             self.buffer[idx]['hr'] = cv2.imread(self.video_frame_paths['hr_frames'][idx])[:,:,::-1]
         if self.optflow:
-            if idx == 0:
-                h, w, c = self.buffer[idx]['lr'].shape
-                self.buffer[idx]['flow'] = np.zeros((h,w,2), dtype=np.float32)
-            else:
-                self.buffer[idx]['flow'] = calOptflow(self.buffer[idx-1]['lr'], self.buffer[idx]['lr'])
+            self.updateOptflow(idx)
         self.end = idx+1
         while self.end - self.start > self.pool_size:
             self.buffer[self.start] = None
             self.start += 1
     
+    def updateOptflow(self, idx):
+        if idx == 0:
+            h, w, c = self.buffer[idx]['lr'].shape
+            self.buffer[idx]['flow'] = np.zeros((h,w,2), dtype=np.float32)
+            self.check[idx] = True
+        else:
+            # if self.buffer[idx-1]['lr'] is None:
+            #     h, w, c = self.buffer[idx]['lr'].shape
+            #     self.buffer[idx]['flow'] = np.zeros((h,w,2), dtype=np.float32)
+            # else:
+            try:
+                self.buffer[idx]['flow'] = calOptflow(self.buffer[idx-1]['lr'], self.buffer[idx]['lr'])
+                self.check[idx] = True
+            except:
+                h, w, c = self.buffer[idx]['lr'].shape
+                self.buffer[idx]['flow'] = np.zeros((h,w,2), dtype=np.float32)
+    
     def __getitem__(self, idx):
         if idx < self.end:
+            if self.check[idx] is False:
+                self.updateOptflow(idx)
             return self.buffer[idx]
         else:
             self.update(idx)

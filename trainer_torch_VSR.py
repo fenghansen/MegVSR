@@ -22,7 +22,7 @@ if __name__ == '__main__':
     crop_per_image = 4
     crop_size = 32
     nframes = 5
-    num_workers = 0
+    num_workers = 2
     step_size = 2
     learning_rate = 4e-5
     last_epoch = 0
@@ -62,7 +62,6 @@ if __name__ == '__main__':
                 cnt = 0
                 total_loss = 0
                 cf = nframes//2   # center_frame
-                break
                 with tqdm(total=len(dataloader_train)) as t:
                     for k, data in enumerate(dataloader_train):
                         # 由于crops的存在，Dataloader会把数据变成5维，需要view回4维
