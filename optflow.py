@@ -9,7 +9,7 @@ def rgb2gray(img):
     b = img[...,2]*0.114
     return r+g+b
 
-def visualize(flow, name='flow'):
+def visualize(flow, name='flow', show=True):
     h, w, c = flow.shape
     hsv = np.zeros((h,w,3), dtype=np.uint8)
     hsv[...,1] = 255
@@ -17,13 +17,14 @@ def visualize(flow, name='flow'):
     hsv[...,0] = ang*180/np.pi/2
     hsv[...,2] = cv2.normalize(mag,None,0,255,cv2.NORM_MINMAX)
     bgr = cv2.cvtColor(hsv,cv2.COLOR_HSV2BGR)
-    cv2.imshow(name, bgr)
+    if show:
+        cv2.imshow(name, bgr)
     return bgr
 
 def calOptflow(prvs_frame, next_frame, vis=False):
-    hsv = np.zeros_like(prvs_frame)
-    next_frame_gray = rgb2gray(next_frame)
-    prvs_frame_gray = rgb2gray(prvs_frame)
+    hsv = np.zeros_like(prvs_frame, dtype=np.float32)
+    next_frame_gray = rgb2gray(next_frame).astype(np.float32)
+    prvs_frame_gray = rgb2gray(prvs_frame).astype(np.float32)
     flow = cv2.calcOpticalFlowFarneback(prvs_frame_gray, next_frame_gray, None, 0.5, 3, 15, 3, 5, 1.2,
                                         cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
     if vis:
@@ -35,12 +36,12 @@ def calOptflow(prvs_frame, next_frame, vis=False):
             total *= s
         no_move = len(I[I==0])
         print(no_move, total, f"{no_move/total * 100:.2f}%")
-        prvs_frame = prvs_frame[:,:,::-1]
+        prvs_frame = prvs_frame[:,:,::-1]/255.
         prvs_frame = FlowShift(prvs_frame, flow)
-        merge = prvs_frame*.5 + bgr*.5
-        merge[I<1] = prvs_frame[I<1]
+        merge = prvs_frame*127.5 + bgr*.5
+        merge[I<1] = prvs_frame[I<1]*255
         cv2.imshow('new_frames', np.uint8(merge))
-        k = cv2.waitKey(10) & 0xff
+        k = cv2.waitKey(30) & 0xff
     return flow
 
 def FlowSplit(flow):
@@ -77,7 +78,7 @@ if __name__ == '__main__':
     # flows, w = FlowSplit(np.array([[[1.7,1.2]]]))
     # print(flows[0][0], w)
     import h5py
-    root_dir = r'F:\datasets\MegVSR\train_png\85.mkv_down4x.mp4_frames'
+    root_dir = r'F:\datasets\MegVSR\train_png\84.mkv_down4x.mp4_frames'
     files = [os.path.join(root_dir, name) for name in os.listdir(root_dir)]
     # imgs = get_frames_from_video(85)
     # for k in range(2,20):
@@ -109,7 +110,7 @@ if __name__ == '__main__':
     prvs_img = cv2.imread(files[0])[:,:,::-1]
     cv2.imshow('new_frames',prvs_img[:,:,::-1])
     cv2.imshow('flow',np.zeros_like(prvs_img))
-    cv2.waitKey(5000)
+    cv2.waitKey(1000)
     for i, file in enumerate(files[1:]):
         next_img = cv2.imread(file)[:,:,::-1]
         flow = calOptflow(prvs_img, next_img, True)

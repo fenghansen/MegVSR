@@ -37,7 +37,7 @@ class Global_Buffer(Dataset):
                 self.buffer[idx]['flow'] = np.zeros((h,w,2), dtype=np.float32)
             else:
                 self.buffer[idx]['flow'] = calOptflow(self.buffer[idx-1]['lr'], self.buffer[idx]['lr'])
-        self.end = idx
+        self.end = idx+1
         while self.end - self.start > self.pool_size:
             self.buffer[self.start] = None
             self.start += 1
@@ -133,7 +133,7 @@ class MegVSR_Dataset(Dataset):
             self.w_start.append(w_start)
             self.h_end.append(h_start + self.crop_size)
             self.w_end.append(w_start + self.crop_size)
-            self.aug.append(np.random.randint(8))
+            self.aug.append(0)#np.random.randint(8))
 
     def get_frame_shape(self):
         video_frame = self.frame_paths[self.video_id]
@@ -146,10 +146,10 @@ class MegVSR_Dataset(Dataset):
         data = {}
         h, w, c = lr_img.shape
         # 创建空numpy做画布
-        lr_crops = np.zeros((self.crop_per_image, self.crop_size, self.crop_size, c))
-        hr_crops = np.zeros((self.crop_per_image, self.crop_size*4, self.crop_size*4, c))
+        lr_crops = np.zeros((self.crop_per_image, self.crop_size, self.crop_size, c), dtype=np.float32)
+        hr_crops = np.zeros((self.crop_per_image, self.crop_size*4, self.crop_size*4, c), dtype=np.float32)
         if self.optflow:
-            flow_crops = np.zeros((self.crop_per_image, self.crop_size, self.crop_size, 2))
+            flow_crops = np.zeros((self.crop_per_image, self.crop_size, self.crop_size, 2), dtype=np.float32)
 
         # 往空tensor的通道上贴patchs
         for i in range(self.crop_per_image):
@@ -201,10 +201,10 @@ class MegVSR_Dataset(Dataset):
         data['frame_id'] = buffer[cf]['frame_id']
         data['video_id'] = buffer[cf]['video_id']
         b, c, h, w = buffer[cf]['lr'].shape
-        data['lr'] = np.zeros((b, c*self.nframes, h, w))
-        data['hr'] = np.zeros((b, c*self.nframes, h*4, w*4))
+        data['lr'] = np.zeros((b, c*self.nframes, h, w), dtype=np.float32)
+        data['hr'] = np.zeros((b, c*self.nframes, h*4, w*4), dtype=np.float32)
         if self.cv2_INTER:
-            data['bc'] = np.zeros((b, c*self.nframes, h*4, w*4))
+            data['bc'] = np.zeros((b, c*self.nframes, h*4, w*4), dtype=np.float32)
 
         for i, frame in enumerate(buffer):
             data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
@@ -213,7 +213,7 @@ class MegVSR_Dataset(Dataset):
                 data['bc'][:, c*i:c*(i+1), :, :] = frame['bc']
         
         if self.optflow:
-            data['flow'] = np.zeros((b, 2*self.nframes, h, w))
+            data['flow'] = np.zeros((b, 2*self.nframes, h, w), dtype=np.float32)
             data['flow'][:,2*(cf-1):2*(cf-0),:,:] = buffer[cf]['flow']
             data['flow'][:,2*(cf+1):2*(cf+2),:,:] = -buffer[cf+1]['flow']
 
@@ -222,10 +222,15 @@ class MegVSR_Dataset(Dataset):
                 data['flow'][:,2*(cf+2):2*(cf+3),:,:] = -buffer[cf+1]['flow'] - buffer[cf+2]['flow']
         
         for i in range(self.nframes):
-            flow = data['flow'][:,2*i:2*(i+1),:,:]
-            visualize(flow[0].transpose(1,2,0), name=f"Frame{i-2}")
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+            image = data['lr'][0,c*i:c*(i+1),:,:].transpose(1,2,0)
+            flow = data['flow'][0,2*i:2*(i+1),:,:].transpose(1,2,0)
+            shift = FlowShift(image, flow)
+            if i == cf: continue
+            bgr = visualize(flow, name=f"Frame{i-2}", show=False)
+            final = bgr*0.5 + shift*127.5
+            cv2.imshow(f"Frame{i-2}", final[:,:,::-1].astype(np.uint8))
+            # cv2.imshow(f"ori{i-2}", shift[:,:,::-1]-image[:,:,::-1])
+        cv2.waitKey(30)
         
         return data
 
@@ -271,7 +276,7 @@ class MegVSR_Dataset(Dataset):
             bc_crops = bc_crops.transpose(0,3,1,2).astype(np.float32) / 255.
             data['bc'] = np.ascontiguousarray(bc_crops)
         if self.optflow:
-            flow_crops = flow_crops.transpose(0,3,1,2).astype(np.float32) / 255.
+            flow_crops = flow_crops.transpose(0,3,1,2).astype(np.float32)
             data['flow'] = np.ascontiguousarray(flow_crops)
 
         data['frame_id'] = '%04d' % idx
@@ -404,9 +409,10 @@ class MegVSR_Test_Dataset(Dataset):
         
         for i in range(self.nframes):
             flow = data['flow'][:,c*i:c*(i+1),:,:]
+            if i == cf: continue
             visualize(flow, name=f"Frame{i-2}")
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        cv2.waitKey(10)
+        # cv2.destroyAllWindows()
         
         return data
     
@@ -528,11 +534,11 @@ def data_aug(image, mode):
 
 
 if __name__=='__main__':
-    crop_per_image = 4
+    crop_per_image = 1
     nframes = 5
     gbuffer_train = Global_Buffer(pool_size=15, optflow=True)
     dst = MegVSR_Dataset('F:/datasets/MegVSR', crop_per_image=crop_per_image, optflow=True,
-                        mode='train',crop_size=269, nframes=nframes, global_buffer=gbuffer_train)
+                        mode='train',crop_size=128, nframes=nframes, global_buffer=gbuffer_train)
     # dst = MegVSR_Test_Dataset('F:/datasets/MegVSR/', crop_per_image=crop_per_image, 
                         # mode='train',crop_size=100, nframes=nframes)
     dataloader_train = DataLoader(dst, batch_size=1, shuffle=False, num_workers=0)
