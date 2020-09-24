@@ -425,20 +425,21 @@ class MegVSR_Test_Dataset(Dataset):
                 data['bc'][:, c*i:c*(i+1), :, :] = frame['bc']
         
         if self.optflow:
-            data['flow'] = np.zeros((b, c*self.nframes, h, w))
-            data['flow'][:,c*(cf-1):c*(cf-0),:,:] = buffer[cf]['flow']
-            data['flow'][:,c*(cf+1):c*(cf+2),:,:] = -buffer[cf+1]['flow']
+            data['flow'] = np.zeros((b, h, w, 2*self.nframes), dtype=np.float32)
+            data['flow'][:,:,:,2*(cf-1):2*(cf-0)] = buffer[cf]['flow']
+            data['flow'][:,:,:,2*(cf+1):2*(cf+2)] = -buffer[cf+1]['flow']
 
             if self.nframes == 5:
-                data['flow'][:,c*(cf-2):c*(cf-1),:,:] = buffer[cf-1]['flow'] + buffer[cf]['flow']
-                data['flow'][:,c*(cf+2):c*(cf+3),:,:] = -buffer[cf+1]['flow'] - buffer[cf+2]['flow']
+                data['flow'][:,:,:,2*(cf-2):2*(cf-1)] = buffer[cf-1]['flow'] + buffer[cf]['flow']
+                data['flow'][:,:,:,2*(cf+2):2*(cf+3)] = -buffer[cf+1]['flow'] - buffer[cf+2]['flow']
         
-        for i in range(self.nframes):
-            flow = data['flow'][:,c*i:c*(i+1),:,:]
-            if i == cf: continue
-            visualize(flow, name=f"Frame{i-2}")
-        cv2.waitKey(10)
-        # cv2.destroyAllWindows()
+            for crop_id in range(b):
+                for i in range(self.nframes):
+                    if i == cf: continue
+                    image = data['lr'][crop_id,:,:,c*i:c*(i+1)]
+                    flow = data['flow'][crop_id,:,:,2*i:2*(i+1)]
+                    shift = FlowShift(image, flow)
+                    data['lr'][crop_id,:,:,c*i:c*(i+1)] = shift
         
         data['lr'] = np.ascontiguousarray(data['lr'].transpose(0,3,1,2))
         if self.cv2_INTER:
@@ -455,6 +456,12 @@ class MegVSR_Test_Dataset(Dataset):
         lr_img = self.global_buffer[idx]['lr']
         # lr_img = cv2.imread(video_frame['lr_frames'][idx])[:,:,::-1]
         lr_crops = np.expand_dims(lr_img, 0)
+        if self.optflow:
+            flow = self.global_buffer[idx]['flow']
+            flow_crops = np.expand_dims(flow, 0)
+            flow_crops = flow_crops.astype(np.float32)
+            data['flow'] = flow_crops
+
         if self.cv2_INTER:
             b, h, w, c = lr_crops.shape
             bc_crops = np.zeros((b, h*4, w*4, c))

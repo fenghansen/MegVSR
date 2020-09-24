@@ -201,8 +201,8 @@ if __name__ == '__main__':
                                     
 
     elif mode == 'test':
-        gbuffer = Global_Buffer(pool_size=40)
-        test_dst = MegVSR_Test_Dataset(root_dir, nframes=nframes, shuffle=True, global_buffer=gbuffer)
+        gbuffer = Global_Buffer(pool_size=40, optflow=True)
+        test_dst = MegVSR_Test_Dataset(root_dir, nframes=nframes, shuffle=True, global_buffer=gbuffer, optflow=True)
         imgs_lr = torch.tensor(dtype=np.float32)
         imgs_bc = torch.tensor(dtype=np.float32)
 
