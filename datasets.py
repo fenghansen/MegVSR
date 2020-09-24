@@ -352,11 +352,12 @@ class MegVSR_Dataset(Dataset):
 
 class MegVSR_Test_Dataset(Dataset):
     def __init__(self, root_dir, nframes=3, cv2_INTER=True, shuffle=False,
-                global_buffer=None):
+                global_buffer=None, optflow=False):
         super().__init__()
         self.root_dir = root_dir
         self.buffer = []
         self.global_buffer = global_buffer
+        self.optflow = optflow
         self.nframes = nframes
         self.shuffle = shuffle
         self.cv2_INTER = cv2_INTER
@@ -414,15 +415,15 @@ class MegVSR_Test_Dataset(Dataset):
         cf = self.nframes // 2
         data['frame_id'] = buffer[cf]['frame_id']
         data['video_id'] = buffer[cf]['video_id']
-        b, c, h, w = buffer[cf]['lr'].shape
-        data['lr'] = np.zeros((b, c*self.nframes, h, w))
+        b, h, w, c = buffer[cf]['lr'].shape
+        data['lr'] = np.zeros((b, h, w, c*self.nframes), dtype=np.float32)
         if self.cv2_INTER:
-            data['bc'] = np.zeros((b, c*self.nframes, h*4, w*4))
+            data['bc'] = np.zeros((b, h*4, w*4, c*self.nframes), dtype=np.float32)
 
         for i, frame in enumerate(buffer):
-            data['lr'][:, c*i:c*(i+1), :, :] = frame['lr']
+            data['lr'][:, :, :, c*i:c*(i+1)] = frame['lr']
             if self.cv2_INTER:
-                data['bc'][:, c*i:c*(i+1), :, :] = frame['bc']
+                data['bc'][:, :, :, c*i:c*(i+1)] = frame['bc']
         
         if self.optflow:
             data['flow'] = np.zeros((b, h, w, 2*self.nframes), dtype=np.float32)
