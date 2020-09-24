@@ -34,11 +34,11 @@ if __name__ == '__main__':
     cv2_INTER = True
     psnr_best = 29.80
 
-    net = SlowFusion_RRDB(in_nc=3*nframes, nf=64, nb=6, cv2_INTER=cv2_INTER)
+    net = EarlyFusion_RRDB(in_nc=3*nframes, nf=64, nb=6, cv2_INTER=cv2_INTER)
     optimizer = Adam(net.parameters(), lr=learning_rate)
 
     model = torch.load('last_model.pkl')
-    net = load_weights(net, model['net'], by_name=True)
+    net = load_weights(net, model['net'])
     optimizer.load_state_dict(model['opt'])
 
     for g in optimizer.param_groups:
@@ -87,6 +87,7 @@ if __name__ == '__main__':
         for epoch in range(last_epoch+1, stop_epoch+1):
             random.shuffle(video_train_list)
             for v, video_id in enumerate(video_train_list):
+                break
                 train_dst.next_video(video_id)
                 cnt = 0
                 total_loss = 0

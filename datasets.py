@@ -149,7 +149,7 @@ class MegVSR_Dataset(Dataset):
             self.w_start.append(w_start)
             self.h_end.append(h_start + self.crop_size)
             self.w_end.append(w_start + self.crop_size)
-            self.aug.append(0)#np.random.randint(8))
+            self.aug.append(np.random.randint(8))
 
     def get_frame_shape(self):
         video_frame = self.frame_paths[self.video_id]
